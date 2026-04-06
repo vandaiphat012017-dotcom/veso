@@ -3,6 +3,13 @@ export interface LotterySet {
   numbers: string[];
 }
 
+export interface CustomPreference {
+  number: string;
+  quantity: number;
+  stationId?: string;
+  dayOfWeek?: number; // 0-6 (Sunday-Saturday), if undefined applies every day
+}
+
 export interface Seller {
   id: string;
   name: string;
@@ -20,7 +27,7 @@ export interface Seller {
   mainEnabled: boolean;
   subStationRatios: Record<string, number>; // sub-station ID -> percentage (0-100)
   fixedSetId?: string; // If set, always uses this set
-  customPreferences?: Array<{ number: string, quantity: number, stationId?: string }>; // Specific numbers and quantities
+  customPreferences?: CustomPreference[]; // Specific numbers and quantities
 }
 
 export interface WeeklySchedule {
@@ -61,6 +68,7 @@ export interface Shortage {
   station: string; // 'main' or sub-station ID
   needed: number;
   available: number;
+  missingNumber?: string; // The specific number that was missing (if applicable)
 }
 
 export interface DistributionReport {

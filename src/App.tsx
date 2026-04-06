@@ -21,7 +21,9 @@ import {
   RefreshCw,
   Download,
   QrCode,
-  Star
+  Star,
+  Layers,
+  ArrowRightLeft
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -69,6 +71,31 @@ export default function App() {
     }))
   );
   const [isWeeklyScheduleOpen, setIsWeeklyScheduleOpen] = useState(false);
+  const [doubleSets, setDoubleSets] = useState<Record<string, string>>(DOUBLE_SETS);
+  const [isDoubleSetManagerOpen, setIsDoubleSetManagerOpen] = useState(false);
+
+  const addTicketsToInventory = (station: string, number: string, quantity: number) => {
+    setDailyInput(prev => {
+      if (station === 'main' || station === 'ưu tiên') {
+        return {
+          ...prev,
+          mainStationTickets: {
+            ...prev.mainStationTickets,
+            [number]: (prev.mainStationTickets[number] || 0) + quantity
+          }
+        };
+      } else {
+        return {
+          ...prev,
+          subStations: prev.subStations.map(sub => 
+            sub.id === station 
+              ? { ...sub, tickets: { ...sub.tickets, [number]: (sub.tickets[number] || 0) + quantity } }
+              : sub
+          )
+        };
+      }
+    });
+  };
 
   // Apply weekly schedule when date changes
   useEffect(() => {
@@ -240,6 +267,7 @@ export default function App() {
         initialMain,
         initialSubPools,
         lotterySets,
+        doubleSets,
         history
       );
       
@@ -404,7 +432,7 @@ export default function App() {
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
             <Ticket className="text-white w-6 h-6" />
           </div>
-          <h1 className="font-bold text-xl tracking-tight text-slate-800">LottoDist</h1>
+          <h1 className="font-bold text-xl tracking-tight text-slate-800">CHIA VÉ 4.0</h1>
         </div>
 
         <nav className="flex flex-col gap-2">
@@ -438,6 +466,14 @@ export default function App() {
           >
             <Edit3 size={20} />
             <span>Quản Lý Bộ Số</span>
+          </button>
+
+          <button 
+            onClick={() => setIsDoubleSetManagerOpen(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 transition-all border border-transparent hover:border-slate-200"
+          >
+            <Layers size={20} />
+            <span>Quản Lý Bộ Đôi</span>
           </button>
 
           {showInstallBtn && (
@@ -1455,39 +1491,74 @@ export default function App() {
               </div>
 
               <div className="p-8">
-                <div className="space-y-4 max-h-[300px] overflow-y-auto mb-8 pr-2">
+                <div className="space-y-4 max-h-[400px] overflow-y-auto mb-8 pr-2">
                   {shortages.map((s, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-rose-50 rounded-2xl border border-rose-100">
-                      <div>
-                        <div className="font-bold text-slate-800">{s.sellerName}</div>
-                        <div className="text-xs font-bold text-rose-500 uppercase mt-1">
-                          Thiếu {s.needed} số {s.station === 'main' ? 'Đài Chính' : `Đài Phụ (${s.station})`}
+                    <div key={idx} className="flex flex-col gap-3 p-5 bg-rose-50 rounded-3xl border border-rose-100">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-slate-800 text-lg">{s.sellerName}</div>
+                          <div className="text-xs font-bold text-rose-500 uppercase mt-1">
+                            Thiếu {s.needed} số {s.station === 'main' ? 'Đài Chính' : s.station === 'ưu tiên' ? 'Số Ưu Tiên' : `Đài Phụ (${s.station})`}
+                          </div>
+                        </div>
+                        <div className="text-rose-400">
+                          <AlertCircle size={24} />
                         </div>
                       </div>
-                      <div className="text-rose-400">
-                        <TrendingUp size={20} />
-                      </div>
+
+                      {s.missingNumber && (
+                        <div className="flex flex-col gap-2 mt-2 pt-3 border-t border-rose-100/50">
+                          <p className="text-xs text-slate-500 font-medium italic">
+                            Số bị thiếu: <span className="text-rose-600 font-bold text-sm">{s.missingNumber}</span>
+                          </p>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => {
+                                addTicketsToInventory(s.station, s.missingNumber!, s.needed);
+                                setShortages(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="flex-1 py-2.5 bg-white text-rose-600 border border-rose-200 rounded-xl text-[10px] font-bold hover:bg-rose-100 transition-all flex items-center justify-center gap-1"
+                            >
+                              <Plus size={12} /> Thêm {s.needed} vé
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setEditingSellerId(s.sellerId);
+                                setIsSellerPrefOpen(true);
+                                setShortages([]);
+                              }}
+                              className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl text-[10px] font-bold hover:bg-rose-700 transition-all flex items-center justify-center gap-1"
+                            >
+                              <Edit3 size={12} /> Đổi số khác
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!s.missingNumber && (
+                        <div className="mt-2 pt-3 border-t border-rose-100/50">
+                          <button 
+                            onClick={() => {
+                              setEditingSellerId(s.sellerId);
+                              setIsSellerPrefOpen(true);
+                              setShortages([]);
+                            }}
+                            className="w-full py-2.5 bg-rose-600 text-white rounded-xl text-[10px] font-bold hover:bg-rose-700 transition-all flex items-center justify-center gap-1"
+                          >
+                            <Settings size={12} /> Điều chỉnh người bán
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
 
                 <div className="flex flex-col gap-3">
                   <button 
-                    onClick={() => {
-                      // Logic to add 160 tickets to all missing numbers (simplified)
-                      // In a real app, we might ask which numbers specifically
-                      // For now, we just clear shortages to let user manually fix or retry
-                      setShortages([]);
-                    }}
+                    onClick={() => setShortages([])}
                     className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
                   >
-                    Tôi đã hiểu, để tôi kiểm tra lại
-                  </button>
-                  <button 
-                    onClick={() => setShortages([])}
-                    className="w-full py-4 bg-white text-slate-400 rounded-2xl font-bold hover:bg-slate-50 transition-all"
-                  >
-                    Đóng thông báo
+                    Đóng và tự xử lý
                   </button>
                 </div>
               </div>
@@ -1496,6 +1567,114 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Double Set Manager Modal */}
+      <AnimatePresence>
+        {isDoubleSetManagerOpen && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Quản Lý Bộ Đôi</h3>
+                  <p className="text-sm text-slate-500">Thiết lập các cặp bộ số đi cùng nhau khi chọn loại "Bộ Đôi".</p>
+                </div>
+                <button 
+                  onClick={() => setIsDoubleSetManagerOpen(false)}
+                  className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+                >
+                  <X size={24} className="text-slate-400" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="space-y-4">
+                  {Object.entries(doubleSets).map(([setA, setB], idx) => (
+                    <div key={idx} className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Bộ Thứ Nhất</label>
+                        <select 
+                          value={setA}
+                          onChange={(e) => {
+                            const newSets = { ...doubleSets };
+                            const val = e.target.value;
+                            delete newSets[setA];
+                            newSets[val] = setB;
+                            setDoubleSets(newSets);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {lotterySets.map(s => <option key={s.id} value={s.id}>Bộ {s.id}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-center pt-5">
+                        <ArrowRightLeft size={20} className="text-slate-300" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Bộ Thứ Hai</label>
+                        <select 
+                          value={setB}
+                          onChange={(e) => {
+                            const newSets = { ...doubleSets };
+                            newSets[setA] = e.target.value;
+                            setDoubleSets(newSets);
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                          {lotterySets.map(s => <option key={s.id} value={s.id}>Bộ {s.id}</option>)}
+                        </select>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newSets = { ...doubleSets };
+                          delete newSets[setA];
+                          setDoubleSets(newSets);
+                        }}
+                        className="p-2 text-slate-300 hover:text-rose-500 transition-colors mt-5"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <button 
+                    onClick={() => {
+                      const availableSets = lotterySets.map(s => s.id).filter(id => !doubleSets[id] && !Object.values(doubleSets).includes(id));
+                      if (availableSets.length >= 2) {
+                        setDoubleSets({ ...doubleSets, [availableSets[0]]: availableSets[1] });
+                      } else {
+                        alert("Không còn đủ bộ số trống để tạo cặp mới.");
+                      }
+                    }}
+                    className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold text-sm hover:border-indigo-300 hover:text-indigo-500 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} />
+                    Thêm Cặp Bộ Đôi Mới
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+                <button 
+                  onClick={() => setDoubleSets(DOUBLE_SETS)}
+                  className="px-6 py-3 text-slate-500 font-bold hover:text-slate-700 transition-colors"
+                >
+                  Khôi phục mặc định
+                </button>
+                <button 
+                  onClick={() => setIsDoubleSetManagerOpen(false)}
+                  className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
+                >
+                  Lưu & Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       {/* Set Manager Modal */}
       <AnimatePresence>
         {isSetManagerOpen && (
@@ -1913,23 +2092,46 @@ export default function App() {
                                     <Trash2 size={18} />
                                   </button>
                                 </div>
-                                <div className="w-full">
-                                  <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Đài lấy vé</label>
-                                  <select 
-                                    value={pref.stationId || ''}
-                                    onChange={(e) => {
-                                      const newPrefs = [...(seller.customPreferences || [])];
-                                      newPrefs[idx].stationId = e.target.value || undefined;
-                                      updateSeller(seller.id, { customPreferences: newPrefs });
-                                    }}
-                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  >
-                                    <option value="">Tự động (Chính {'>'} Phụ)</option>
-                                    <option value="main">Đài Chính</option>
-                                    {(dailyInput?.subStations || []).map(sub => (
-                                      <option key={sub.id} value={sub.id}>{sub.name}</option>
-                                    ))}
-                                  </select>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="flex-1">
+                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Đài lấy vé</label>
+                                    <select 
+                                      value={pref.stationId || ''}
+                                      onChange={(e) => {
+                                        const newPrefs = [...(seller.customPreferences || [])];
+                                        newPrefs[idx].stationId = e.target.value || undefined;
+                                        updateSeller(seller.id, { customPreferences: newPrefs });
+                                      }}
+                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    >
+                                      <option value="">Tự động (Chính {'>'} Phụ)</option>
+                                      <option value="main">Đài Chính</option>
+                                      {(dailyInput?.subStations || []).map(sub => (
+                                        <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Ngày áp dụng</label>
+                                    <select 
+                                      value={pref.dayOfWeek === undefined ? '' : pref.dayOfWeek}
+                                      onChange={(e) => {
+                                        const newPrefs = [...(seller.customPreferences || [])];
+                                        newPrefs[idx].dayOfWeek = e.target.value === '' ? undefined : parseInt(e.target.value);
+                                        updateSeller(seller.id, { customPreferences: newPrefs });
+                                      }}
+                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    >
+                                      <option value="">Tất cả các ngày</option>
+                                      <option value="1">Thứ Hai</option>
+                                      <option value="2">Thứ Ba</option>
+                                      <option value="3">Thứ Tư</option>
+                                      <option value="4">Thứ Năm</option>
+                                      <option value="5">Thứ Sáu</option>
+                                      <option value="6">Thứ Bảy</option>
+                                      <option value="0">Chủ Nhật</option>
+                                    </select>
+                                  </div>
                                 </div>
                               </div>
                             ))
