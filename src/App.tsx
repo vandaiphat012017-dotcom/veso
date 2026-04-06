@@ -20,7 +20,8 @@ import {
   Save,
   RefreshCw,
   Download,
-  QrCode
+  QrCode,
+  Star
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -57,6 +58,8 @@ export default function App() {
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isSellerPrefOpen, setIsSellerPrefOpen] = useState(false);
   const [editingSellerId, setEditingSellerId] = useState<string | null>(null);
+  const [isQuickSelectOpen, setIsQuickSelectOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>(
     Array.from({ length: 7 }, (_, i) => ({
@@ -161,6 +164,9 @@ export default function App() {
 
     const savedWeekly = localStorage.getItem('lottery_weekly_schedule');
     if (savedWeekly) setWeeklySchedules(JSON.parse(savedWeekly));
+
+    const savedDailyInput = localStorage.getItem('lottery_daily_input');
+    if (savedDailyInput) setDailyInput(JSON.parse(savedDailyInput));
   }, []);
 
   // Save sellers and sets when they change
@@ -175,6 +181,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('lottery_weekly_schedule', JSON.stringify(weeklySchedules));
   }, [weeklySchedules]);
+
+  useEffect(() => {
+    localStorage.setItem('lottery_daily_input', JSON.stringify(dailyInput));
+  }, [dailyInput]);
 
   const applyWeeklySchedule = () => {
     const date = new Date(dailyInput.date);
@@ -343,8 +353,8 @@ export default function App() {
     });
   };
 
-  const totalMain = (Object.values(dailyInput.mainStationTickets) as number[]).reduce((a, b) => a + b, 0);
-  const totalSub = dailyInput.subStations.reduce((acc, s) => acc + (Object.values(s.tickets) as number[]).reduce((a, b) => a + b, 0), 0);
+  const totalMain = (Object.values(dailyInput?.mainStationTickets || {}) as number[]).reduce((a, b) => a + b, 0);
+  const totalSub = (dailyInput?.subStations || []).reduce((acc, s) => acc + (Object.values(s?.tickets || {}) as number[]).reduce((a, b) => a + b, 0), 0);
   const totalTickets = totalMain + totalSub;
   const currentRatio = totalTickets > 0 ? Math.round((totalMain / totalTickets) * 100) : 70;
 
@@ -360,7 +370,9 @@ export default function App() {
       isAutoMode: true,
       isEnabled: true,
       mainEnabled: true,
-      subStationRatios: { 'sub1': 20, 'sub2': 10 }
+      subStationRatios: { 'sub1': 20, 'sub2': 10 },
+      customPreferences: [],
+      fixedSetId: undefined
     };
     setSellers([...sellers, newSeller]);
   };
@@ -451,22 +463,22 @@ export default function App() {
               <TrendingUp size={14} />
               <span>Tỷ lệ kho vé hiện tại</span>
             </div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-500">Đài Chính</span>
-                <span className="text-xs font-black text-indigo-600">{currentRatio}%</span>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-500">Đài Chính</span>
+                  <span className="text-xs font-black text-indigo-600">{currentRatio}%</span>
+                </div>
+                {(dailyInput?.subStations || []).map(sub => {
+                  const subTotal = (Object.values(currentPools?.subPools?.[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0);
+                  const ratio = totalTickets > 0 ? Math.round((subTotal / totalTickets) * 100) : 0;
+                  return (
+                    <div key={sub.id} className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-500">{sub.name}</span>
+                      <span className="text-xs font-black text-emerald-600">{ratio}%</span>
+                    </div>
+                  );
+                })}
               </div>
-              {dailyInput.subStations.map(sub => {
-                const subTotal = (Object.values(currentPools.subPools[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0);
-                const ratio = totalTickets > 0 ? Math.round((subTotal / totalTickets) * 100) : 0;
-                return (
-                  <div key={sub.id} className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold text-slate-500">{sub.name}</span>
-                    <span className="text-xs font-black text-emerald-600">{ratio}%</span>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </div>
       </div>
@@ -598,15 +610,15 @@ export default function App() {
                         <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(currentPools.main) as number[]).reduce((a, b) => a + b, 0)}</div>
                         {editingStation === 'main' && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-indigo-600/5 rounded-full" />}
                       </button>
-                      {dailyInput.subStations.map(sub => (
+                      {(dailyInput?.subStations || []).map(sub => (
                         <button 
                           key={sub.id}
                           onClick={() => setEditingStation(sub.id)}
-                          className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === sub.id ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 bg-slate-50'}`}
+                          className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === sub.id ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}
                         >
                           <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">{sub.name}</div>
-                          <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(currentPools.subPools[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
-                          {editingStation === sub.id && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-indigo-600/5 rounded-full" />}
+                          <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(currentPools?.subPools?.[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
+                          {editingStation === sub.id && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-emerald-500/5 rounded-full" />}
                         </button>
                       ))}
                     </div>
@@ -728,14 +740,25 @@ export default function App() {
                         <p className="text-xs text-slate-400 font-medium">Xử lý phân phối riêng biệt</p>
                       </div>
                     </div>
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => handleDistribute()}
-                        disabled={isProcessing || sellers.filter(s => s.isEnabled).every(s => results.some(r => r.sellerId === s.id))}
-                        className="text-[10px] font-bold text-indigo-600 hover:underline disabled:opacity-50"
-                      >
-                        Chia tất cả
-                      </button>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          placeholder="Tìm người bán..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-48"
+                        />
+                        <Users size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                      <div className="flex gap-3">
+                        <button 
+                          onClick={() => handleDistribute()}
+                          disabled={isProcessing || sellers.filter(s => s.isEnabled).every(s => results.some(r => r.sellerId === s.id))}
+                          className="text-[10px] font-bold text-indigo-600 hover:underline disabled:opacity-50"
+                        >
+                          Chia tất cả
+                        </button>
                       <button 
                         onClick={() => {
                           setResults([]);
@@ -754,10 +777,13 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                </div>
 
                   <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-hide">
-                    {sellers.filter(s => s.isEnabled).map(seller => {
-                      const isDistributed = results.some(r => r.sellerId === seller.id);
+                    {sellers
+                      .filter(s => s.isEnabled && s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map(seller => {
+                        const isDistributed = results.some(r => r.sellerId === seller.id);
                       const result = results.find(r => r.sellerId === seller.id);
                       
                       return (
@@ -777,11 +803,34 @@ export default function App() {
                                     >
                                       Chính
                                     </button>
-                                    {dailyInput.subStations.map(sub => (
+                                    {(dailyInput?.subStations || []).map(sub => (
                                       <span key={sub.id} className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[8px] font-bold rounded uppercase">
                                         {sub.name}
                                       </span>
                                     ))}
+                                  </div>
+                                )}
+                                {/* Sở Thích Summary */}
+                                {(seller.customPreferences || []).length > 0 && !isDistributed && (
+                                  <div className="mt-3 flex flex-wrap gap-1 items-center">
+                                    <div className="flex items-center gap-1 text-[8px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-100">
+                                      <Star size={8} fill="currentColor" />
+                                      <span>SỞ THÍCH:</span>
+                                    </div>
+                                    {seller.customPreferences?.map((pref, i) => (
+                                      <span key={i} className="px-1.5 py-0.5 bg-slate-50 text-slate-600 text-[8px] font-bold rounded border border-slate-200">
+                                        {pref.number} ({pref.quantity}t)
+                                      </span>
+                                    ))}
+                                    <button 
+                                      onClick={() => {
+                                        setEditingSellerId(seller.id);
+                                        setIsSellerPrefOpen(true);
+                                      }}
+                                      className="text-[8px] font-bold text-indigo-600 hover:underline ml-1"
+                                    >
+                                      Sửa
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -903,20 +952,20 @@ export default function App() {
                                         className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                                       />
                                     </div>
-                                    {dailyInput.subStations.map(sub => (
+                                    {(dailyInput?.subStations || []).map(sub => (
                                       <div key={sub.id}>
                                         <div className="flex justify-between items-center mb-1">
                                           <label className="text-[10px] font-bold text-slate-400 uppercase block">Tỷ lệ {sub.name}</label>
-                                          <span className="text-[10px] font-bold text-indigo-600">{seller.subStationRatios[sub.id] || 0}%</span>
+                                          <span className="text-[10px] font-bold text-indigo-600">{seller.subStationRatios?.[sub.id] || 0}%</span>
                                         </div>
                                         <input 
                                           type="range" 
                                           min="0" 
                                           max="100" 
                                           step="5"
-                                          value={seller.subStationRatios[sub.id] || 0}
+                                          value={seller.subStationRatios?.[sub.id] || 0}
                                           onChange={(e) => {
-                                            const newRatios = { ...seller.subStationRatios };
+                                            const newRatios = { ...(seller.subStationRatios || {}) };
                                             newRatios[sub.id] = parseInt(e.target.value);
                                             updateSeller(seller.id, { subStationRatios: newRatios });
                                           }}
@@ -1081,24 +1130,62 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden"
+              className="space-y-4"
             >
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Trạng Thái</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Người Bán</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Đài</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Loại Bộ</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Số Tờ/Số</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Tổng Vé Cần Lấy</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Bộ Hiện Tại</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Thao Tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {sellers.map((seller) => (
-                    <tr key={seller.id} className={`hover:bg-slate-50/50 transition-colors ${!seller.isEnabled ? 'opacity-50 grayscale' : ''}`}>
+              <div className="flex items-center justify-between bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800">Danh Sách Người Bán</h2>
+                  <p className="text-sm text-slate-500">Quản lý thông tin và cấu hình chia vé cho từng người.</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Tìm người bán..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all w-64"
+                    />
+                    <Users size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const newId = (sellers.length + 1).toString().padStart(2, '0');
+                      setSellers([...sellers, { ...INITIAL_SELLERS[0], id: newId, name: `Người Bán ${newId}` }]);
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                  >
+                    <Plus size={20} />
+                    Thêm Người Bán
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Trạng Thái</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Người Bán</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Đài</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Loại Bộ</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Số Tờ/Số</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Tổng Vé Cần Lấy</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">
+                        <div className="flex items-center gap-1">
+                          <Star size={12} className="text-amber-500" />
+                          <span>Sở Thích</span>
+                        </div>
+                      </th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Bộ Hiện Tại</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Thao Tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {sellers
+                      .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map((seller) => (
+                        <tr key={seller.id} className={`hover:bg-slate-50/50 transition-colors ${!seller.isEnabled ? 'opacity-50 grayscale' : ''}`}>
                       <td className="px-6 py-4">
                         <button 
                           onClick={() => updateSeller(seller.id, { isEnabled: !seller.isEnabled })}
@@ -1133,14 +1220,14 @@ export default function App() {
                             />
                             <span className="text-[10px] text-slate-400">%</span>
                           </div>
-                          {dailyInput.subStations.map(sub => (
+                          {(dailyInput?.subStations || []).map(sub => (
                             <div key={sub.id} className="flex items-center gap-2">
                               <span className="text-[10px] font-bold text-slate-400 w-12 truncate">{sub.name}</span>
                               <input 
                                 type="number" 
-                                value={seller.subStationRatios[sub.id] || 0}
+                                value={seller.subStationRatios?.[sub.id] || 0}
                                 onChange={(e) => {
-                                  const newRatios = { ...seller.subStationRatios };
+                                  const newRatios = { ...(seller.subStationRatios || {}) };
                                   newRatios[sub.id] = parseInt(e.target.value) || 0;
                                   updateSeller(seller.id, { subStationRatios: newRatios });
                                 }}
@@ -1191,6 +1278,30 @@ export default function App() {
                           onChange={(e) => updateSeller(seller.id, { targetTotalTickets: parseInt(e.target.value) || 0 })}
                           className="w-24 bg-slate-100 border-none rounded-lg text-sm font-bold text-slate-600 px-3 py-1.5 outline-none"
                         />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          {(seller.customPreferences || []).length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-[150px]">
+                              {seller.customPreferences?.map((pref, i) => (
+                                <span key={i} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded border border-indigo-100">
+                                  {pref.number}({pref.quantity})
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-300 italic">Trống</span>
+                          )}
+                          <button 
+                            onClick={() => {
+                              setEditingSellerId(seller.id);
+                              setIsSellerPrefOpen(true);
+                            }}
+                            className="text-[10px] font-bold text-indigo-600 hover:underline text-left mt-1"
+                          >
+                            + Chỉnh sửa
+                          </button>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-2">
@@ -1255,8 +1366,9 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
-            </motion.div>
-          )}
+            </div>
+        </motion.div>
+      )}
 
           {activeTab === 'history' && (
             <motion.div 
@@ -1434,25 +1546,78 @@ export default function App() {
                         <Trash2 size={16} />
                       </button>
                       <div className="flex justify-between items-center mb-4">
-                        <span className="text-lg font-bold text-indigo-600">Bộ {set.id}</span>
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
-                          <Hash size={12} />
-                          {set.numbers.length} con số
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-400 uppercase">Mã Bộ:</span>
+                          <input 
+                            type="text"
+                            value={set.id}
+                            onChange={(e) => {
+                              const newId = e.target.value;
+                              setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, id: newId } : s));
+                            }}
+                            className="w-12 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-bold text-indigo-600 outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Số lượng:</span>
+                            <input 
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={set.numbers.length}
+                              onChange={(e) => {
+                                const newSize = parseInt(e.target.value) || 0;
+                                let newNumbers = [...set.numbers];
+                                if (newSize > newNumbers.length) {
+                                  newNumbers = [...newNumbers, ...Array(newSize - newNumbers.length).fill('00')];
+                                } else {
+                                  newNumbers = newNumbers.slice(0, newSize);
+                                }
+                                setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: newNumbers } : s));
+                              }}
+                              className="w-12 bg-white border border-slate-200 rounded px-1 py-0.5 text-[10px] font-bold text-slate-600 outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
+                            <Hash size={12} />
+                            {set.numbers.length} con số
+                          </div>
                         </div>
                       </div>
                       <div className="grid grid-cols-5 gap-2">
                         {set.numbers.map((num, idx) => (
-                          <input 
-                            key={idx}
-                            type="text"
-                            value={num}
-                            onChange={(e) => updateSetNumber(set.id, idx, e.target.value)}
-                            className="w-full text-center py-2 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                            maxLength={2}
-                          />
+                          <div key={idx} className="relative group/num">
+                            <input 
+                              type="text"
+                              value={num}
+                              onChange={(e) => updateSetNumber(set.id, idx, e.target.value)}
+                              className="w-full text-center py-2 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                              maxLength={2}
+                            />
+                            <button 
+                              onClick={() => {
+                                const newNumbers = set.numbers.filter((_, i) => i !== idx);
+                                setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: newNumbers } : s));
+                              }}
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/num:opacity-100 transition-all shadow-sm"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
                         ))}
                       </div>
-                      <div className="mt-3 flex justify-end">
+                      <div className="mt-3 flex justify-between items-center">
+                        <button 
+                          onClick={() => {
+                            if (confirm(`Xoá tất cả số trong bộ ${set.id}?`)) {
+                              setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: [] } : s));
+                            }
+                          }}
+                          className="text-[10px] font-bold text-rose-400 hover:text-rose-600 transition-colors"
+                        >
+                          Xóa tất cả số
+                        </button>
                         <button 
                           onClick={() => {
                             const newNumbers = [...set.numbers, '00'];
@@ -1667,51 +1832,105 @@ export default function App() {
                             + Thêm số ưu tiên
                           </button>
                         </div>
+
+                        {/* Quick Select Grid */}
+                        <div className="mb-6">
+                          <button 
+                            onClick={() => setIsQuickSelectOpen(!isQuickSelectOpen)}
+                            className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 mb-3"
+                          >
+                            <ChevronDown size={12} className={`transition-transform ${isQuickSelectOpen ? 'rotate-180' : ''}`} />
+                            <span>Chọn nhanh từ bảng 100 số (Mặc định 16 tờ)</span>
+                          </button>
+                          {isQuickSelectOpen && (
+                            <div className="grid grid-cols-10 gap-1 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                              {Array.from({ length: 100 }, (_, i) => i.toString().padStart(2, '0')).map(num => {
+                                const isSelected = (seller.customPreferences || []).some(p => p.number === num);
+                                return (
+                                  <button 
+                                    key={num}
+                                    onClick={() => {
+                                      const prefs = [...(seller.customPreferences || [])];
+                                      if (isSelected) {
+                                        updateSeller(seller.id, { customPreferences: prefs.filter(p => p.number !== num) });
+                                      } else {
+                                        updateSeller(seller.id, { customPreferences: [...prefs, { number: num, quantity: 16 }] });
+                                      }
+                                    }}
+                                    className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-lg border transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
+                                  >
+                                    {num}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                         
                         <div className="space-y-3">
                           {(seller.customPreferences || []).length > 0 ? (
                             (seller.customPreferences || []).map((pref, idx) => (
-                              <div key={idx} className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <div className="flex-1">
-                                  <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Con số</label>
-                                  <input 
-                                    type="text" 
-                                    value={pref.number}
-                                    onChange={(e) => {
-                                      const newPrefs = [...(seller.customPreferences || [])];
-                                      newPrefs[idx].number = e.target.value.padStart(2, '0').slice(-2);
+                              <div key={idx} className="flex flex-col gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <div className="flex items-center gap-4">
+                                  <div className="flex-1">
+                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Con số</label>
+                                    <input 
+                                      type="text" 
+                                      value={pref.number}
+                                      onChange={(e) => {
+                                        const newPrefs = [...(seller.customPreferences || [])];
+                                        newPrefs[idx].number = e.target.value.padStart(2, '0').slice(-2);
+                                        updateSeller(seller.id, { customPreferences: newPrefs });
+                                      }}
+                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                      maxLength={2}
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Số lượng vé</label>
+                                    <select 
+                                      value={pref.quantity}
+                                      onChange={(e) => {
+                                        const newPrefs = [...(seller.customPreferences || [])];
+                                        newPrefs[idx].quantity = parseInt(e.target.value);
+                                        updateSeller(seller.id, { customPreferences: newPrefs });
+                                      }}
+                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    >
+                                      <option value={16}>16 tờ</option>
+                                      <option value={32}>32 tờ</option>
+                                      <option value={160}>160 tờ</option>
+                                      <option value={320}>320 tờ</option>
+                                    </select>
+                                  </div>
+                                  <button 
+                                    onClick={() => {
+                                      const newPrefs = (seller.customPreferences || []).filter((_, i) => i !== idx);
                                       updateSeller(seller.id, { customPreferences: newPrefs });
                                     }}
-                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    maxLength={2}
-                                  />
-                                </div>
-                                <div className="flex-1">
-                                  <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Số lượng vé</label>
-                                  <select 
-                                    value={pref.quantity}
-                                    onChange={(e) => {
-                                      const newPrefs = [...(seller.customPreferences || [])];
-                                      newPrefs[idx].quantity = parseInt(e.target.value);
-                                      updateSeller(seller.id, { customPreferences: newPrefs });
-                                    }}
-                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    className="mt-4 p-2 text-slate-300 hover:text-rose-500 transition-colors"
                                   >
-                                    <option value={16}>16 tờ</option>
-                                    <option value={32}>32 tờ</option>
-                                    <option value={160}>160 tờ</option>
-                                    <option value={320}>320 tờ</option>
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                                <div className="w-full">
+                                  <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Đài lấy vé</label>
+                                  <select 
+                                    value={pref.stationId || ''}
+                                    onChange={(e) => {
+                                      const newPrefs = [...(seller.customPreferences || [])];
+                                      newPrefs[idx].stationId = e.target.value || undefined;
+                                      updateSeller(seller.id, { customPreferences: newPrefs });
+                                    }}
+                                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  >
+                                    <option value="">Tự động (Chính {'>'} Phụ)</option>
+                                    <option value="main">Đài Chính</option>
+                                    {(dailyInput?.subStations || []).map(sub => (
+                                      <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                    ))}
                                   </select>
                                 </div>
-                                <button 
-                                  onClick={() => {
-                                    const newPrefs = (seller.customPreferences || []).filter((_, i) => i !== idx);
-                                    updateSeller(seller.id, { customPreferences: newPrefs });
-                                  }}
-                                  className="mt-4 p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
                               </div>
                             ))
                           ) : (

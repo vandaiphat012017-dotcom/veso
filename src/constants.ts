@@ -46,7 +46,7 @@ export const getPairId = (id: string): string | undefined => {
 };
 
 export const INITIAL_SELLERS: any[] = [
-  { id: '1', name: 'Người A', setType: 'single', sheetsOption: '16', targetTotalTickets: 160, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 } },
-  { id: '2', name: 'Người B', setType: 'double', sheetsOption: '32', targetTotalTickets: 320, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 } },
-  { id: '3', name: 'Người C', setType: 'single', sheetsOption: 'custom', customSheets: 10, targetTotalTickets: 200, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 } },
+  { id: '1', name: 'Người A', setType: 'single', sheetsOption: '16', targetTotalTickets: 160, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 }, customPreferences: [], fixedSetId: undefined },
+  { id: '2', name: 'Người B', setType: 'double', sheetsOption: '32', targetTotalTickets: 320, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 }, customPreferences: [], fixedSetId: undefined },
+  { id: '3', name: 'Người C', setType: 'single', sheetsOption: 'custom', customSheets: 10, targetTotalTickets: 200, allocationMode: 'auto', currentSetIndex: 0, isAutoMode: true, isEnabled: true, mainEnabled: true, subStationRatios: { 'sub1': 20, 'sub2': 10 }, customPreferences: [], fixedSetId: undefined },
 ];

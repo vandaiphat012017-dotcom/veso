@@ -20,7 +20,7 @@ export interface Seller {
   mainEnabled: boolean;
   subStationRatios: Record<string, number>; // sub-station ID -> percentage (0-100)
   fixedSetId?: string; // If set, always uses this set
-  customPreferences?: Array<{ number: string, quantity: number }>; // Specific numbers and quantities
+  customPreferences?: Array<{ number: string, quantity: number, stationId?: string }>; // Specific numbers and quantities
 }
 
 export interface WeeklySchedule {

@@ -92,31 +92,55 @@ export function distributeTickets(
       seller.customPreferences.forEach(pref => {
         const num = pref.number;
         const qty = pref.quantity;
+        const stationId = pref.stationId;
         
-        // Try to take from Main first
-        if (currentMainPool[num] >= qty) {
-          mainNumbers.push(num);
-          mainStationQuantities[num] = qty;
-          currentMainPool[num] -= qty;
-          currentTargetTotal -= qty;
+        if (stationId === 'main') {
+          if (currentMainPool[num] >= qty) {
+            mainNumbers.push(num);
+            mainStationQuantities[num] = qty;
+            currentMainPool[num] -= qty;
+            currentTargetTotal -= qty;
+          } else {
+            shortages.push({ sellerId: seller.id, sellerName: seller.name, station: 'main', needed: qty, available: currentMainPool[num] || 0 });
+          }
+        } else if (stationId && currentSubPools[stationId]) {
+          if (currentSubPools[stationId][num] >= qty) {
+            const subRes = subStationResults.find(r => r.id === stationId);
+            if (subRes) {
+              subRes.numbers.push(num);
+              subRes.quantities[num] = qty;
+              currentSubPools[stationId][num] -= qty;
+              currentTargetTotal -= qty;
+            }
+          } else {
+            shortages.push({ sellerId: seller.id, sellerName: seller.name, station: stationId, needed: qty, available: currentSubPools[stationId][num] || 0 });
+          }
         } else {
-          // Try to take from Sub stations
-          let foundInSub = false;
-          for (const subId of Object.keys(currentSubPools)) {
-            if (currentSubPools[subId][num] >= qty) {
-              const subRes = subStationResults.find(r => r.id === subId);
-              if (subRes) {
-                subRes.numbers.push(num);
-                subRes.quantities[num] = qty;
-                currentSubPools[subId][num] -= qty;
-                currentTargetTotal -= qty;
-                foundInSub = true;
-                break;
+          // Original logic: Try Main then Sub
+          if (currentMainPool[num] >= qty) {
+            mainNumbers.push(num);
+            mainStationQuantities[num] = qty;
+            currentMainPool[num] -= qty;
+            currentTargetTotal -= qty;
+          } else {
+            // Try to take from Sub stations
+            let foundInSub = false;
+            for (const subId of Object.keys(currentSubPools)) {
+              if (currentSubPools[subId][num] >= qty) {
+                const subRes = subStationResults.find(r => r.id === subId);
+                if (subRes) {
+                  subRes.numbers.push(num);
+                  subRes.quantities[num] = qty;
+                  currentSubPools[subId][num] -= qty;
+                  currentTargetTotal -= qty;
+                  foundInSub = true;
+                  break;
+                }
               }
             }
-          }
-          if (!foundInSub) {
-            shortages.push({ sellerId: seller.id, sellerName: seller.name, station: 'ưu tiên', needed: qty, available: 0 });
+            if (!foundInSub) {
+              shortages.push({ sellerId: seller.id, sellerName: seller.name, station: 'ưu tiên', needed: qty, available: 0 });
+            }
           }
         }
       });
