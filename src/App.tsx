@@ -24,11 +24,14 @@ import {
   Star,
   Layers,
   ArrowRightLeft,
-  LayoutDashboard
+  LayoutDashboard,
+  Printer,
+  Search,
+  MinusCircle
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Seller, DistributionResult, DailyInput, LotterySet, Shortage, WeeklySchedule } from './types';
+import { Seller, DistributionResult, DailyInput, LotterySet, Shortage, WeeklySchedule, DailyStationConfig } from './types';
 import { INITIAL_SELLERS, LOTTERY_SETS, DOUBLE_SETS, getPairId } from './constants';
 import { distributeTickets } from './utils/lotteryLogic';
 
@@ -68,12 +71,25 @@ export default function App() {
     Array.from({ length: 7 }, (_, i) => ({
       dayOfWeek: i,
       mainStationBaseQuantity: 160, // Default 160 tickets
+      subStationBaseQuantities: { 'sub1': 0, 'sub2': 0 },
       isActive: false
     }))
   );
   const [isWeeklyScheduleOpen, setIsWeeklyScheduleOpen] = useState(false);
   const [doubleSets, setDoubleSets] = useState<Record<string, string>>(DOUBLE_SETS);
   const [isDoubleSetManagerOpen, setIsDoubleSetManagerOpen] = useState(false);
+  const [stationConfigs, setStationConfigs] = useState<DailyStationConfig[]>(
+    Array.from({ length: 7 }, (_, i) => ({
+      dayOfWeek: i,
+      mainStationName: i === 0 ? 'Kiên Giang' : i === 1 ? 'TP.HCM' : i === 2 ? 'Bến Tre' : i === 3 ? 'Cần Thơ' : i === 4 ? 'Tây Ninh' : i === 5 ? 'Vĩnh Long' : 'TP.HCM',
+      subStations: [
+        { id: 'sub1', name: 'Đài Phụ 1' },
+        { id: 'sub2', name: 'Đài Phụ 2' }
+      ]
+    }))
+  );
+  const [searchNumber, setSearchNumber] = useState('');
+  const [adjustAmount, setAdjustAmount] = useState<number>(1);
 
   const addTicketsToInventory = (station: string, number: string, quantity: number) => {
     setDailyInput(prev => {
@@ -162,6 +178,267 @@ export default function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
+  const handlePrint = (res: DistributionResult) => {
+    handlePrintResults([res]);
+  };
+
+  const getDraftResults = (sellerId?: string): DistributionResult[] => {
+    const day = new Date(dailyInput.date).getDate();
+    const baseSetIndex = (day - 1) % lotterySets.length;
+    
+    const targetSellers = sellerId 
+      ? sellers.filter(s => s.id === sellerId)
+      : sellers.filter(s => s.isEnabled);
+
+    return targetSellers.map((seller) => {
+      const sIdx = sellers.findIndex(s => s.id === seller.id);
+      let startSetIndex = baseSetIndex;
+      if (seller.fixedSetId) {
+        const fixedIdx = lotterySets.findIndex(ls => ls.id === seller.fixedSetId);
+        if (fixedIdx !== -1) startSetIndex = fixedIdx;
+      } else if (seller.isAutoMode) {
+        startSetIndex = (baseSetIndex + sIdx) % lotterySets.length;
+      } else if (seller.manualSetId) {
+        const manualIdx = lotterySets.findIndex(ls => ls.id === seller.manualSetId);
+        if (manualIdx !== -1) startSetIndex = manualIdx;
+      }
+      
+      const startSet = lotterySets[startSetIndex] || { id: '??' };
+      
+      // Calculate split
+      const mainRatio = seller.customRatio !== undefined ? seller.customRatio / 100 : 0.7;
+      const mainQty = seller.mainEnabled ? Math.round(seller.targetTotalTickets * mainRatio) : 0;
+      
+      const subResults = dailyInput.subStations.map(sub => {
+        const ratio = seller.subStationRatios?.[sub.id] || 0;
+        const qty = Math.round(seller.targetTotalTickets * (ratio / 100));
+        return {
+          id: sub.id,
+          name: sub.name,
+          numbers: [],
+          quantities: { "Dự kiến": qty }
+        };
+      }).filter(sr => (Object.values(sr.quantities)[0] as number) > 0);
+
+      return {
+        date: dailyInput.date,
+        sellerId: seller.id,
+        sellerName: seller.name,
+        setName: startSet.id,
+        mainStationNumbers: [],
+        mainStationQuantities: mainQty > 0 ? { "Dự kiến": mainQty } : {},
+        subStationResults: subResults,
+        totalSheets: seller.targetTotalTickets
+      };
+    });
+  };
+
+  const handlePrintResults = (resultsToPrint: DistributionResult[]) => {
+    if (resultsToPrint.length === 0) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const allTickets: string[] = [];
+
+    resultsToPrint.forEach((res) => {
+      const config = stationConfigs.find(c => c.dayOfWeek === new Date(res.date).getDay());
+      const ticketsToPrint: { stationName: string, quantity: number }[] = [];
+      
+      // Main station
+      const mainQty = Object.values(res.mainStationQuantities || {}).reduce((a, b) => a + b, 0);
+      if (mainQty > 0) {
+        ticketsToPrint.push({
+          stationName: config?.mainStationName || 'Đài Chính',
+          quantity: mainQty
+        });
+      }
+      
+      // Sub stations
+      res.subStationResults.forEach(sub => {
+        const subQty = Object.values(sub.quantities || {}).reduce((a, b) => a + b, 0);
+        if (subQty > 0) {
+          ticketsToPrint.push({
+            stationName: sub.name,
+            quantity: subQty
+          });
+        }
+      });
+
+      ticketsToPrint.forEach(t => {
+        allTickets.push(`
+          <div class="ticket">
+            <div class="header">
+              ${new Date(res.date).toLocaleDateString('vi-VN')} - ${t.stationName}
+            </div>
+            <div class="quantity">
+              ${t.quantity}
+            </div>
+            <div class="footer">
+              <div class="seller-name">${res.sellerName}</div>
+              <div class="set-name">Bộ ${res.setName}</div>
+            </div>
+          </div>
+        `);
+      });
+    });
+
+    if (allTickets.length === 0) {
+      printWindow.close();
+      return;
+    }
+
+    const html = `
+      <html>
+        <head>
+          <title>In Phiếu Phân Phối</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 5mm;
+            }
+            body { 
+              margin: 0; 
+              padding: 0; 
+              font-family: sans-serif; 
+            }
+            .grid-container {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              grid-template-rows: repeat(5, 1fr);
+              width: 200mm;
+              height: 287mm;
+              gap: 0;
+              page-break-after: always;
+            }
+            .ticket { 
+              border: 0.5pt solid #ccc; 
+              padding: 5px; 
+              display: flex; 
+              flex-direction: column; 
+              justify-content: space-between; 
+              align-items: center;
+              box-sizing: border-box;
+              overflow: hidden;
+              text-align: center;
+            }
+            .header { 
+              font-size: 12px; 
+              font-weight: bold; 
+              color: #000;
+              width: 100%;
+              border-bottom: 1pt solid #000;
+              padding-bottom: 1px;
+            }
+            .quantity { 
+              font-size: 72px; 
+              font-weight: 900; 
+              line-height: 0.9;
+              margin: 0;
+              color: #000;
+            }
+            .footer { 
+              width: 100%;
+              display: flex;
+              flex-direction: column;
+              gap: 0;
+              color: #000;
+              border-top: 1pt solid #000;
+              padding-top: 1px;
+            }
+            .seller-name {
+              font-size: 24px;
+              font-weight: 900;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              line-height: 1.1;
+            }
+            .set-name {
+              font-size: 14px;
+              font-weight: bold;
+              line-height: 1;
+            }
+            @media print {
+              .grid-container {
+                page-break-after: always;
+              }
+              .grid-container:last-child {
+                page-break-after: auto;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${Array.from({ length: Math.ceil(allTickets.length / 20) }).map((_, i) => `
+            <div class="grid-container">
+              ${allTickets.slice(i * 20, (i + 1) * 20).join('')}
+            </div>
+          `).join('')}
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const adjustInventory = (num: string, amount: number, stationId: string) => {
+    if (!num || num.length !== 2) return;
+    
+    setDailyInput(prev => {
+      let newState = { ...prev };
+      if (stationId === 'main') {
+        const current = prev.mainStationTickets[num] || 0;
+        const newVal = Math.max(0, current + amount);
+        const newMain = { ...prev.mainStationTickets };
+        if (newVal === 0) delete newMain[num];
+        else newMain[num] = newVal;
+        newState = { ...prev, mainStationTickets: newMain };
+      } else {
+        const newSubs = prev.subStations.map(s => {
+          if (s.id === stationId) {
+            const current = s.tickets[num] || 0;
+            const newVal = Math.max(0, current + amount);
+            const newTickets = { ...s.tickets };
+            if (newVal === 0) delete newTickets[num];
+            else newTickets[num] = newVal;
+            return { ...s, tickets: newTickets };
+          }
+          return s;
+        });
+        newState = { ...prev, subStations: newSubs };
+      }
+      return newState;
+    });
+
+    // Explicitly update current pools for immediate feedback
+    setCurrentPools(prev => {
+      if (stationId === 'main') {
+        const current = prev.main[num] || 0;
+        const newVal = Math.max(0, current + amount);
+        const newMain = { ...prev.main };
+        if (newVal === 0) delete newMain[num];
+        else newMain[num] = newVal;
+        return { ...prev, main: newMain };
+      } else {
+        const newSubPools = { ...prev.subPools };
+        const subPool = newSubPools[stationId] || {};
+        const current = subPool[num] || 0;
+        const newVal = Math.max(0, current + amount);
+        const newTickets = { ...subPool };
+        if (newVal === 0) delete newTickets[num];
+        else newTickets[num] = newVal;
+        newSubPools[stationId] = newTickets;
+        return { ...prev, subPools: newSubPools };
+      }
+    });
+  };
   const handleCopyLink = () => {
     const url = process.env.SHARED_APP_URL || process.env.APP_URL || window.location.origin;
     navigator.clipboard.writeText(url);
@@ -202,6 +479,9 @@ export default function App() {
 
     const savedDailyInput = localStorage.getItem('lottery_daily_input');
     if (savedDailyInput) setDailyInput(JSON.parse(savedDailyInput));
+
+    const savedStationConfigs = localStorage.getItem('lottery_station_configs');
+    if (savedStationConfigs) setStationConfigs(JSON.parse(savedStationConfigs));
   }, []);
 
   // Save sellers and sets when they change
@@ -221,6 +501,10 @@ export default function App() {
     localStorage.setItem('lottery_daily_input', JSON.stringify(dailyInput));
   }, [dailyInput]);
 
+  useEffect(() => {
+    localStorage.setItem('lottery_station_configs', JSON.stringify(stationConfigs));
+  }, [stationConfigs]);
+
   const applyWeeklySchedule = () => {
     const date = new Date(dailyInput.date);
     const dayOfWeek = date.getDay();
@@ -228,22 +512,47 @@ export default function App() {
     
     if (schedule && schedule.isActive) {
       const qty = schedule.mainStationBaseQuantity;
-      // Apply to all sets in main station as 160 tickets (10 sets of 16)
-      // Or just set the dailyInput.mainStationTickets directly
       const newMain: Record<string, number> = {};
       lotterySets.forEach(set => {
         set.numbers.forEach(num => {
           newMain[num] = qty;
         });
       });
-      setDailyInput(prev => ({ ...prev, mainStationTickets: newMain }));
+      
+      const newSubStations = dailyInput.subStations.map(sub => {
+        const subQty = schedule.subStationBaseQuantities[sub.id] || 0;
+        const newSubTickets: Record<string, number> = {};
+        lotterySets.forEach(set => {
+          set.numbers.forEach(num => {
+            newSubTickets[num] = subQty;
+          });
+        });
+        return { ...sub, tickets: newSubTickets };
+      });
+
+      setDailyInput(prev => ({ 
+        ...prev, 
+        mainStationTickets: newMain,
+        subStations: newSubStations
+      }));
       
       // Also update setInventory for visual consistency
-      const newInv: Record<string, { q16: number, q32: number }> = {};
+      const newInv: Record<string, Record<string, { q16: number, q32: number }>> = {
+        main: {}
+      };
       lotterySets.forEach(set => {
-        newInv[set.id] = { q16: Math.floor(qty / 16), q32: 0 };
+        newInv.main[set.id] = { q16: Math.floor(qty / 16), q32: 0 };
       });
-      setSetInventory(prev => ({ ...prev, main: newInv }));
+      
+      newSubStations.forEach(sub => {
+        newInv[sub.id] = {};
+        const subQty = schedule.subStationBaseQuantities[sub.id] || 0;
+        lotterySets.forEach(set => {
+          newInv[sub.id][set.id] = { q16: Math.floor(subQty / 16), q32: 0 };
+        });
+      });
+
+      setSetInventory(newInv);
     }
   };
 
@@ -546,8 +855,16 @@ export default function App() {
             </h2>
           </div>
           
-          {activeTab === 'distribute' && (
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => handlePrintResults(results.length > 0 ? results : getDraftResults())}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95 ${results.length > 0 ? 'bg-slate-900 text-white shadow-slate-200 hover:bg-slate-800' : 'bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600'}`}
+            >
+              <Printer size={20} />
+              <span>{results.length > 0 ? 'In Tất Cả Phiếu' : 'In Phiếu Dự Kiến'}</span>
+            </button>
+
+            {activeTab === 'distribute' && (
               <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-6">
                 <div className="flex flex-col">
                   <span className="text-[8px] font-bold text-slate-400 uppercase">Tổng Kho Vé</span>
@@ -564,18 +881,18 @@ export default function App() {
                   <span className="text-sm font-black text-emerald-600">{Object.values(currentPools.subPools).reduce((acc: number, pool) => acc + (Object.values(pool) as number[]).reduce((a, b) => a + b, 0), 0)}</span>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === 'sellers' && (
-            <button 
-              onClick={addSeller}
-              className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-            >
-              <Plus size={20} />
-              <span>Thêm Người Bán</span>
-            </button>
-          )}
+            {activeTab === 'sellers' && (
+              <button 
+                onClick={addSeller}
+                className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+              >
+                <Plus size={20} />
+                <span>Thêm Người Bán</span>
+              </button>
+            )}
+          </div>
         </header>
 
         <AnimatePresence>
@@ -654,26 +971,69 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Search and Quick Adjust */}
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-3">
+                        <div className="relative flex-1">
+                          <input 
+                            type="text"
+                            placeholder="Tìm số (00-99)..."
+                            value={searchNumber}
+                            onChange={(e) => setSearchNumber(e.target.value.slice(0, 2))}
+                            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="number"
+                            value={adjustAmount}
+                            onChange={(e) => setAdjustAmount(parseInt(e.target.value) || 0)}
+                            className="w-16 text-center py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                          <button 
+                            onClick={() => searchNumber.length === 2 && adjustInventory(searchNumber, adjustAmount, editingStation)}
+                            className="p-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                            title="Cộng vào kho"
+                          >
+                            <Plus size={20} />
+                          </button>
+                          <button 
+                            onClick={() => searchNumber.length === 2 && adjustInventory(searchNumber, -adjustAmount, editingStation)}
+                            className="p-2 bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-100"
+                            title="Trừ khỏi kho"
+                          >
+                            <MinusCircle size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
                       <button 
                         onClick={() => setEditingStation('main')}
                         className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === 'main' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 bg-slate-50'}`}
                       >
-                        <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">Đài Chính</div>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">
+                          {stationConfigs.find(c => c.dayOfWeek === new Date(dailyInput.date).getDay())?.mainStationName || 'Đài Chính'}
+                        </div>
                         <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(dailyInput.mainStationTickets) as number[]).reduce((a, b) => a + b, 0)}</div>
                         {editingStation === 'main' && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-indigo-600/5 rounded-full" />}
                       </button>
-                      {(dailyInput?.subStations || []).map(sub => (
-                        <button 
-                          key={sub.id}
-                          onClick={() => setEditingStation(sub.id)}
-                          className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === sub.id ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}
-                        >
-                          <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">{sub.name}</div>
-                          <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
-                          {editingStation === sub.id && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-emerald-500/5 rounded-full" />}
-                        </button>
-                      ))}
+                      {(dailyInput?.subStations || []).map(sub => {
+                        const subConfig = stationConfigs.find(c => c.dayOfWeek === new Date(dailyInput.date).getDay())?.subStations.find(s => s.id === sub.id);
+                        return (
+                          <button 
+                            key={sub.id}
+                            onClick={() => setEditingStation(sub.id)}
+                            className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === sub.id ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}
+                          >
+                            <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">{subConfig?.name || sub.name}</div>
+                            <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
+                            {editingStation === sub.id && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-emerald-500/5 rounded-full" />}
+                          </button>
+                        );
+                      })}
                     </div>
 
                       <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100">
@@ -1153,9 +1513,18 @@ export default function App() {
                               <span className="text-slate-400 text-xs font-medium">• {res.totalSheets} tờ tổng cộng</span>
                             </div>
                           </div>
-                          <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                            <CheckCircle2 size={14} />
-                            Hợp lệ
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handlePrint(res)}
+                              className="p-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-all"
+                              title="In phiếu"
+                            >
+                              <Printer size={18} />
+                            </button>
+                            <div className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                              <CheckCircle2 size={14} />
+                              Hợp lệ
+                            </div>
                           </div>
                         </div>
 
@@ -1266,6 +1635,15 @@ export default function App() {
                     <Plus size={20} />
                     Thêm Người Bán
                   </button>
+                  {results.length > 0 && (
+                    <button 
+                      onClick={() => handlePrintResults(results)}
+                      className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                    >
+                      <Printer size={20} />
+                      In Tất Cả Phiếu
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1463,12 +1841,21 @@ export default function App() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => removeSeller(seller.id)}
-                          className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => handlePrintResults(getDraftResults(seller.id))}
+                            className="p-2 text-slate-300 hover:text-amber-500 transition-colors"
+                            title="In phiếu dự kiến"
+                          >
+                            <Printer size={18} />
+                          </button>
+                          <button 
+                            onClick={() => removeSeller(seller.id)}
+                            className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1951,29 +2338,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="p-8 space-y-4 overflow-y-auto max-h-[70vh]">
+              <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
                 {['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'].map((dayName, idx) => {
                   const schedule = weeklySchedules.find(s => s.dayOfWeek === idx)!;
+                  const config = stationConfigs.find(c => c.dayOfWeek === idx)!;
+                  
                   return (
-                    <div key={idx} className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <div className="w-24">
-                        <span className="text-sm font-bold text-slate-700">{dayName}</span>
-                      </div>
-                      <div className="flex-1 flex items-center gap-4">
-                        <div className="flex-1">
-                          <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Lượng vé đài chính</label>
-                          <input 
-                            type="number" 
-                            value={schedule.mainStationBaseQuantity}
-                            onChange={(e) => {
-                              const newSchedules = [...weeklySchedules];
-                              newSchedules[idx].mainStationBaseQuantity = parseInt(e.target.value) || 0;
-                              setWeeklySchedules(newSchedules);
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                            disabled={!schedule.isActive}
-                          />
-                        </div>
+                    <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-bold text-slate-700">{dayName}</span>
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">Kích hoạt</span>
                           <button 
@@ -1987,6 +2360,69 @@ export default function App() {
                             <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${schedule.isActive ? 'right-1' : 'left-1'}`} />
                           </button>
                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Tên Đài Chính</label>
+                          <input 
+                            type="text"
+                            value={config.mainStationName}
+                            onChange={(e) => {
+                              const newConfigs = [...stationConfigs];
+                              newConfigs[idx].mainStationName = e.target.value;
+                              setStationConfigs(newConfigs);
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">Lượng vé Đài Chính</label>
+                          <input 
+                            type="number" 
+                            value={schedule.mainStationBaseQuantity}
+                            onChange={(e) => {
+                              const newSchedules = [...weeklySchedules];
+                              newSchedules[idx].mainStationBaseQuantity = parseInt(e.target.value) || 0;
+                              setWeeklySchedules(newSchedules);
+                            }}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            disabled={!schedule.isActive}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {config.subStations.map((sub, subIdx) => (
+                          <div key={sub.id} className="space-y-2 p-3 bg-white rounded-2xl border border-slate-100">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Đài Phụ {subIdx + 1}</label>
+                            <div className="flex gap-2">
+                              <input 
+                                type="text"
+                                value={sub.name}
+                                onChange={(e) => {
+                                  const newConfigs = [...stationConfigs];
+                                  newConfigs[idx].subStations[subIdx].name = e.target.value;
+                                  setStationConfigs(newConfigs);
+                                }}
+                                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600 outline-none"
+                                placeholder="Tên đài"
+                              />
+                              <input 
+                                type="number"
+                                value={schedule.subStationBaseQuantities[sub.id] || 0}
+                                onChange={(e) => {
+                                  const newSchedules = [...weeklySchedules];
+                                  newSchedules[idx].subStationBaseQuantities[sub.id] = parseInt(e.target.value) || 0;
+                                  setWeeklySchedules(newSchedules);
+                                }}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 outline-none text-center"
+                                placeholder="Vé"
+                                disabled={!schedule.isActive}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );

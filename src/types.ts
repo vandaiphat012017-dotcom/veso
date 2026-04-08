@@ -30,9 +30,21 @@ export interface Seller {
   customPreferences?: CustomPreference[]; // Specific numbers and quantities
 }
 
+export interface StationName {
+  id: string;
+  name: string;
+}
+
+export interface DailyStationConfig {
+  dayOfWeek: number; // 0-6
+  mainStationName: string;
+  subStations: { id: string; name: string }[];
+}
+
 export interface WeeklySchedule {
   dayOfWeek: number; // 0-6 (Sunday-Saturday)
   mainStationBaseQuantity: number; // Base quantity for this day
+  subStationBaseQuantities: Record<string, number>; // sub-station ID -> quantity
   isActive: boolean;
 }
 
