@@ -23,7 +23,8 @@ import {
   QrCode,
   Star,
   Layers,
-  ArrowRightLeft
+  ArrowRightLeft,
+  LayoutDashboard
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -505,7 +506,7 @@ export default function App() {
                   <span className="text-xs font-black text-indigo-600">{currentRatio}%</span>
                 </div>
                 {(dailyInput?.subStations || []).map(sub => {
-                  const subTotal = (Object.values(currentPools?.subPools?.[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0);
+                  const subTotal = (Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0);
                   const ratio = totalTickets > 0 ? Math.round((subTotal / totalTickets) * 100) : 0;
                   return (
                     <div key={sub.id} className="flex justify-between items-center">
@@ -514,6 +515,10 @@ export default function App() {
                     </div>
                   );
                 })}
+                <div className="pt-2 mt-2 border-t border-slate-200 flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-slate-800 uppercase">Tổng Cộng</span>
+                  <span className="text-xs font-black text-slate-800">100%</span>
+                </div>
               </div>
           </div>
         </div>
@@ -536,7 +541,12 @@ export default function App() {
           
           {activeTab === 'distribute' && (
             <div className="flex items-center gap-3">
-              <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+              <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-6">
+                <div className="flex flex-col">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase">Tổng Kho Vé</span>
+                  <span className="text-sm font-black text-slate-700">{totalTickets}</span>
+                </div>
+                <div className="w-px h-8 bg-slate-100" />
                 <div className="flex flex-col">
                   <span className="text-[8px] font-bold text-slate-400 uppercase">Còn lại Chính</span>
                   <span className="text-sm font-black text-indigo-600">{(Object.values(currentPools.main) as number[]).reduce((a, b) => a + b, 0)}</span>
@@ -643,7 +653,7 @@ export default function App() {
                         className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === 'main' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-100 bg-slate-50'}`}
                       >
                         <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">Đài Chính</div>
-                        <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(currentPools.main) as number[]).reduce((a, b) => a + b, 0)}</div>
+                        <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(dailyInput.mainStationTickets) as number[]).reduce((a, b) => a + b, 0)}</div>
                         {editingStation === 'main' && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-indigo-600/5 rounded-full" />}
                       </button>
                       {(dailyInput?.subStations || []).map(sub => (
@@ -653,7 +663,7 @@ export default function App() {
                           className={`flex-1 min-w-[100px] p-4 rounded-2xl border-2 transition-all text-left relative overflow-hidden ${editingStation === sub.id ? 'border-emerald-500 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}
                         >
                           <div className="text-[8px] font-bold text-slate-400 uppercase mb-1 relative z-10">{sub.name}</div>
-                          <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(currentPools?.subPools?.[sub.id] || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
+                          <div className="text-lg font-black text-slate-800 relative z-10">{(Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0)}</div>
                           {editingStation === sub.id && <div className="absolute -right-4 -bottom-4 w-12 h-12 bg-emerald-500/5 rounded-full" />}
                         </button>
                       ))}
@@ -698,7 +708,7 @@ export default function App() {
                                     <span className="text-[8px] font-medium text-slate-400 truncate w-32">{set.numbers.join(', ')}</span>
                                   </div>
                                   <div className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
-                                    Tổng: {inv.q16 * 16 + inv.q32 * 32} vé/số
+                                    {inv.q16 * 16 + inv.q32 * 32} vé/số ({ (inv.q16 * 16 + inv.q32 * 32) * set.numbers.length } vé tổng)
                                   </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -1076,6 +1086,50 @@ export default function App() {
               <div className="lg:col-span-2">
                 {results.length > 0 ? (
                   <div className="space-y-6">
+                    <div className="bg-white p-8 rounded-[40px] shadow-sm border border-slate-100 mb-8">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                            <LayoutDashboard size={24} />
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-bold text-slate-800">Tổng Hợp Kết Quả</h3>
+                            <p className="text-xs text-slate-400 font-medium">Thống kê lượng vé đã chia</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Đài Chính Đã Chia</span>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-indigo-600">
+                              {results.reduce((acc, r) => acc + (Object.values(r.mainStationQuantities) as number[]).reduce((a, b) => a + b, 0), 0)}
+                            </span>
+                            <span className="text-xs font-bold text-indigo-400">/ {totalMain} tờ</span>
+                          </div>
+                        </div>
+                        
+                        {(dailyInput?.subStations || []).map(sub => {
+                          const subTotalDistributed = results.reduce((acc, r) => {
+                            const subRes = r.subStationResults.find(sr => sr.id === sub.id);
+                            return acc + (subRes ? (Object.values(subRes.quantities) as number[]).reduce((a, b) => a + b, 0) : 0);
+                          }, 0);
+                          const subInitialTotal = (Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0);
+                          
+                          return (
+                            <div key={sub.id} className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
+                              <span className="text-[10px] font-bold text-emerald-400 uppercase block mb-1">{sub.name} Đã Chia</span>
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-2xl font-black text-emerald-600">{subTotalDistributed}</span>
+                                <span className="text-xs font-bold text-emerald-400">/ {subInitialTotal} tờ</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {results.map((res, idx) => (
                       <motion.div 
                         initial={{ opacity: 0, x: 20 }}
@@ -1184,6 +1238,17 @@ export default function App() {
                     />
                     <Users size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   </div>
+                  <button 
+                    onClick={() => {
+                      setSellers(INITIAL_SELLERS);
+                      localStorage.removeItem('lotto_sellers');
+                    }}
+                    className="flex items-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                    title="Khôi phục danh sách người bán gốc"
+                  >
+                    <RefreshCw size={18} />
+                    Đặt lại mặc định
+                  </button>
                   <button 
                     onClick={() => {
                       const newId = (sellers.length + 1).toString().padStart(2, '0');
