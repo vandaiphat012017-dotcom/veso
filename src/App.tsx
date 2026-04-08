@@ -243,43 +243,48 @@ export default function App() {
 
     resultsToPrint.forEach((res) => {
       const config = stationConfigs.find(c => c.dayOfWeek === new Date(res.date).getDay());
-      const ticketsToPrint: { stationName: string, quantity: number }[] = [];
       
-      // Main station
-      const mainQty = Object.values(res.mainStationQuantities || {}).reduce((a, b) => a + b, 0);
-      if (mainQty > 0) {
-        ticketsToPrint.push({
-          stationName: config?.mainStationName || 'Đài Chính',
-          quantity: mainQty
-        });
-      }
-      
-      // Sub stations
-      res.subStationResults.forEach(sub => {
-        const subQty = Object.values(sub.quantities || {}).reduce((a, b) => a + b, 0);
-        if (subQty > 0) {
-          ticketsToPrint.push({
-            stationName: sub.name,
-            quantity: subQty
-          });
+      // Main station tickets
+      Object.entries(res.mainStationQuantities || {}).forEach(([num, qty]) => {
+        if (qty > 0) {
+          const stationName = config?.mainStationName || 'Đài Chính';
+          allTickets.push(`
+            <div class="ticket">
+              <div class="header">
+                ${new Date(res.date).toLocaleDateString('vi-VN')} - ${stationName}
+              </div>
+              <div class="quantity">
+                ${qty}
+              </div>
+              <div class="footer">
+                <div class="seller-name">${res.sellerName} ${num !== 'Dự kiến' ? `- Số ${num}` : ''}</div>
+                <div class="set-name">Bộ ${res.setName}</div>
+              </div>
+            </div>
+          `);
         }
       });
-
-      ticketsToPrint.forEach(t => {
-        allTickets.push(`
-          <div class="ticket">
-            <div class="header">
-              ${new Date(res.date).toLocaleDateString('vi-VN')} - ${t.stationName}
-            </div>
-            <div class="quantity">
-              ${t.quantity}
-            </div>
-            <div class="footer">
-              <div class="seller-name">${res.sellerName}</div>
-              <div class="set-name">Bộ ${res.setName}</div>
-            </div>
-          </div>
-        `);
+      
+      // Sub stations tickets
+      res.subStationResults.forEach(sub => {
+        Object.entries(sub.quantities || {}).forEach(([num, qty]) => {
+          if (qty > 0) {
+            allTickets.push(`
+              <div class="ticket">
+                <div class="header">
+                  ${new Date(res.date).toLocaleDateString('vi-VN')} - ${sub.name}
+                </div>
+                <div class="quantity">
+                  ${qty}
+                </div>
+                <div class="footer">
+                  <div class="seller-name">${res.sellerName} ${num !== 'Dự kiến' ? `- Số ${num}` : ''}</div>
+                  <div class="set-name">Bộ ${res.setName}</div>
+                </div>
+              </div>
+            `);
+          }
+        });
       });
     });
 
@@ -582,7 +587,7 @@ export default function App() {
         dailyInput.date,
         targetSellers,
         initialMain,
-        initialSubPools,
+        dailyInput.subStations,
         lotterySets,
         doubleSets,
         history

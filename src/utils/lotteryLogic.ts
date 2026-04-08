@@ -59,7 +59,7 @@ export function distributeTickets(
   date: string,
   sellers: Seller[],
   mainStationPool: Record<string, number>,
-  subStationPools: Record<string, Record<string, number>>, // sub-station ID -> Pool
+  subStations: { id: string, name: string, tickets: Record<string, number> }[],
   lotterySets: LotterySet[],
   doubleSets: Record<string, string>,
   history: DistributionResult[][] = []
@@ -76,8 +76,8 @@ export function distributeTickets(
   // Clone pools to manage inventory
   const currentMainPool = { ...mainStationPool };
   const currentSubPools: Record<string, Record<string, number>> = {};
-  Object.keys(subStationPools).forEach(id => {
-    currentSubPools[id] = { ...subStationPools[id] };
+  subStations.forEach(s => {
+    currentSubPools[s.id] = { ...s.tickets };
   });
 
   // 1. Determine Base Set Index from Date
@@ -116,9 +116,9 @@ export function distributeTickets(
     let mainStationQuantities: Record<string, number> = {};
     let subStationResults: { id: string, name: string, numbers: string[], quantities: Record<string, number> }[] = [];
     
-    // Initialize subStationResults
-    Object.keys(subStationPools).forEach(id => {
-      subStationResults.push({ id, name: id, numbers: [], quantities: {} });
+    // Initialize subStationResults with correct names
+    subStations.forEach(s => {
+      subStationResults.push({ id: s.id, name: s.name, numbers: [], quantities: {} });
     });
 
     let currentTargetTotal = seller.targetTotalTickets;
@@ -418,11 +418,15 @@ if (currentSetOffset > lotterySets.length * 2) break;
         
         let replacement: string | null = null;
         // Priority: Exact same number in Sub pool
-        if (availableSub.includes(num) && !isForbidden([...subResult.numbers, num], startSet.id)) {
+        const currentAssigned = [...mainNumbers, ...subStationResults.flatMap(r => r.numbers)];
+        if (availableSub.includes(num) && !isForbidden([...currentAssigned, num], startSet.id)) {
           replacement = num;
         } else {
           // If not available, find replacement in same decade to maintain structure
-          const allCurrent = [...mainNumbers, ...subResult.numbers];
+          // CRITICAL: Avoid duplicates across ALL stations and future numbers in the set
+          const futureNumbers = initialNumbersFromSets.slice(idx + 1);
+          const allCurrent = [...currentAssigned, ...futureNumbers];
+          
           replacement = findReplacement(
             num, 
             availableSub, 
@@ -442,12 +446,34 @@ if (currentSetOffset > lotterySets.length * 2) break;
           subPool[replacement]--;
         } else {
           // Fallback to Main if Sub is empty
-          if (currentMainPool[num] > 0) {
+          const futureNumbers = initialNumbersFromSets.slice(idx + 1);
+          const allCurrent = [...mainNumbers, ...subStationResults.flatMap(r => r.numbers), ...futureNumbers];
+          
+          if (currentMainPool[num] > 0 && !allCurrent.includes(num)) {
             mainNumbers.push(num);
             mainStationQuantities[num] = sheetsPerNumber;
             currentMainPool[num]--;
           } else {
-            shortages.push({ sellerId: seller.id, sellerName: seller.name, station: subId, needed: 1, available: 0 });
+            const availableMain = Object.keys(currentMainPool).filter(n => currentMainPool[n] > 0);
+            const fallbackReplacement = findReplacement(
+              num,
+              availableMain,
+              allCurrent,
+              neutralNumbers,
+              sellerHistory,
+              startSet.id,
+              true,
+              isSmallSeller,
+              totalNeededFromSets
+            );
+            
+            if (fallbackReplacement) {
+              mainNumbers.push(fallbackReplacement);
+              mainStationQuantities[fallbackReplacement] = sheetsPerNumber;
+              currentMainPool[fallbackReplacement]--;
+            } else {
+              shortages.push({ sellerId: seller.id, sellerName: seller.name, station: subId, needed: 1, available: 0 });
+            }
           }
         }
       } else {
@@ -458,7 +484,10 @@ if (currentSetOffset > lotterySets.length * 2) break;
         // Rule: Ở BỘ 00 CHỈ CÓ KHÔNG ĐƯỢC RÚT CON 67, 48
         const isSet00Restricted = startSet.id === '00' && (finalNum === '67' || finalNum === '48');
         
-        if (currentMainPool[finalNum] > 0 && !isSet00Restricted) {
+        const futureNumbers = initialNumbersFromSets.slice(idx + 1);
+        const allCurrent = [...mainNumbers, ...subStationResults.flatMap(r => r.numbers), ...futureNumbers];
+
+        if (currentMainPool[finalNum] > 0 && !isSet00Restricted && !allCurrent.includes(finalNum)) {
           mainNumbers.push(finalNum);
           mainStationQuantities[finalNum] = sheetsPerNumber;
           currentMainPool[finalNum]--;
@@ -468,7 +497,6 @@ if (currentSetOffset > lotterySets.length * 2) break;
             return currentMainPool[n] > 0 && !isRestricted;
           });
           // Maintain decade structure even in Main replacement
-          const allCurrent = [...mainNumbers, ...subStationResults.flatMap(r => r.numbers)];
           const replacement = findReplacement(
             finalNum, 
             availableMain, 
@@ -501,7 +529,11 @@ if (currentSetOffset > lotterySets.length * 2) break;
       let foundInSub = false;
       for (const subRes of subStationResults) {
         const subPool = currentSubPools[subRes.id];
-        const availableExtremelyBeautiful = Object.keys(subPool).filter(n => subPool[n] > 0 && EXTREMELY_BEAUTIFUL_NUMBERS.includes(n));
+        const availableExtremelyBeautiful = Object.keys(subPool).filter(n => 
+          subPool[n] > 0 && 
+          EXTREMELY_BEAUTIFUL_NUMBERS.includes(n) &&
+          !allAssigned.includes(n) // AVOID DUPLICATES
+        );
         
         if (availableExtremelyBeautiful.length > 0) {
           const beauty = availableExtremelyBeautiful[0];
@@ -516,21 +548,53 @@ if (currentSetOffset > lotterySets.length * 2) break;
             subPool[beauty]--;
             subPool[old]++;
             foundInSub = true;
+            // Update allAssigned for next iteration or beauty check
+            allAssigned[allAssigned.indexOf(old)] = beauty;
             break;
           }
         }
       }
 
       if (!foundInSub) {
-        // Report shortage if we can't find Extremely Beautiful to balance Extremely Ugly
-        shortages.push({
-          sellerId: seller.id,
-          sellerName: seller.name,
-          station: 'cân bằng',
-          needed: 1,
-          available: 0,
-          missingNumber: 'Số Cực Đẹp (để bù Số Cực Xấu)'
-        });
+        // Try Main Station if not found in Sub
+        const availableMain = Object.keys(currentMainPool).filter(n => 
+          currentMainPool[n] > 0 && 
+          EXTREMELY_BEAUTIFUL_NUMBERS.includes(n) &&
+          !allAssigned.includes(n) // AVOID DUPLICATES
+        );
+
+        if (availableMain.length > 0) {
+          const beauty = availableMain[0];
+          const replaceableIdx = mainNumbers.findIndex(n => !EXTREMELY_UGLY_NUMBERS.includes(n) && !UGLY_NUMBERS.includes(n));
+          
+          if (replaceableIdx !== -1) {
+            const old = mainNumbers[replaceableIdx];
+            mainNumbers[replaceableIdx] = beauty;
+            mainStationQuantities[beauty] = mainStationQuantities[old];
+            delete mainStationQuantities[old];
+            currentMainPool[beauty]--;
+            currentMainPool[old]++;
+            allAssigned[allAssigned.indexOf(old)] = beauty;
+          } else {
+            shortages.push({
+              sellerId: seller.id,
+              sellerName: seller.name,
+              station: 'cân bằng',
+              needed: 1,
+              available: 0,
+              missingNumber: 'Số Cực Đẹp (để bù Số Cực Xấu)'
+            });
+          }
+        } else {
+          shortages.push({
+            sellerId: seller.id,
+            sellerName: seller.name,
+            station: 'cân bằng',
+            needed: 1,
+            available: 0,
+            missingNumber: 'Số Cực Đẹp (để bù Số Cực Xấu)'
+          });
+        }
       }
     }
 
@@ -545,7 +609,8 @@ if (currentSetOffset > lotterySets.length * 2) break;
         const availableMain = Object.keys(currentMainPool).filter(n => 
           currentMainPool[n] > 0 && 
           BEAUTIFUL_NUMBERS.includes(n) && 
-          !EXTREMELY_BEAUTIFUL_NUMBERS.includes(n)
+          !EXTREMELY_BEAUTIFUL_NUMBERS.includes(n) &&
+          !allAssigned.includes(n) // AVOID DUPLICATES
         );
         if (availableMain.length > 0) {
           const beauty = availableMain[0];
@@ -555,6 +620,7 @@ if (currentSetOffset > lotterySets.length * 2) break;
           delete mainStationQuantities[old];
           currentMainPool[beauty]--;
           currentMainPool[old]++;
+          allAssigned[allAssigned.indexOf(old)] = beauty;
         }
       }
     }
