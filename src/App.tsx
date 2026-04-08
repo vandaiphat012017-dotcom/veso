@@ -188,7 +188,14 @@ export default function App() {
     if (savedSets) setLotterySets(JSON.parse(savedSets));
 
     const savedSellers = localStorage.getItem('lottery_sellers');
-    if (savedSellers) setSellers(JSON.parse(savedSellers));
+    if (savedSellers) {
+      try {
+        const parsed = JSON.parse(savedSellers);
+        if (Array.isArray(parsed)) setSellers(parsed);
+      } catch (e) {
+        console.error("Error parsing sellers", e);
+      }
+    }
 
     const savedWeekly = localStorage.getItem('lottery_weekly_schedule');
     if (savedWeekly) setWeeklySchedules(JSON.parse(savedWeekly));
@@ -571,7 +578,7 @@ export default function App() {
           )}
         </header>
 
-        <AnimatePresence mode="wait">
+        <AnimatePresence>
           {activeTab === 'distribute' && (
             <motion.div 
               key="distribute"
@@ -1104,7 +1111,7 @@ export default function App() {
                           <span className="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Đài Chính Đã Chia</span>
                           <div className="flex items-baseline gap-2">
                             <span className="text-2xl font-black text-indigo-600">
-                              {results.reduce((acc, r) => acc + (Object.values(r.mainStationQuantities) as number[]).reduce((a, b) => a + b, 0), 0)}
+                              {results.reduce((acc, r) => acc + (Object.values(r.mainStationQuantities || {}) as number[]).reduce((a, b) => a + b, 0), 0)}
                             </span>
                             <span className="text-xs font-bold text-indigo-400">/ {totalMain} tờ</span>
                           </div>
@@ -1113,7 +1120,7 @@ export default function App() {
                         {(dailyInput?.subStations || []).map(sub => {
                           const subTotalDistributed = results.reduce((acc, r) => {
                             const subRes = r.subStationResults.find(sr => sr.id === sub.id);
-                            return acc + (subRes ? (Object.values(subRes.quantities) as number[]).reduce((a, b) => a + b, 0) : 0);
+                            return acc + (subRes ? (Object.values(subRes.quantities || {}) as number[]).reduce((a, b) => a + b, 0) : 0);
                           }, 0);
                           const subInitialTotal = (Object.values(sub.tickets || {}) as number[]).reduce((a, b) => a + b, 0);
                           
@@ -1241,7 +1248,7 @@ export default function App() {
                   <button 
                     onClick={() => {
                       setSellers(INITIAL_SELLERS);
-                      localStorage.removeItem('lotto_sellers');
+                      localStorage.removeItem('lottery_sellers');
                     }}
                     className="flex items-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
                     title="Khôi phục danh sách người bán gốc"
@@ -1283,8 +1290,8 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {sellers
-                      .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                    {Array.isArray(sellers) && sellers
+                      .filter(s => s && s.name && s.name.toLowerCase().includes(searchTerm.toLowerCase()))
                       .map((seller) => (
                         <tr key={seller.id} className={`hover:bg-slate-50/50 transition-colors ${!seller.isEnabled ? 'opacity-50 grayscale' : ''}`}>
                       <td className="px-6 py-4">
@@ -1484,7 +1491,7 @@ export default function App() {
                   <div key={dayIdx} className="space-y-4">
                     <div className="flex items-center gap-4">
                       <div className="h-px flex-1 bg-slate-200" />
-                      <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">{dayResults[0].date}</span>
+                      <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">{dayResults[0]?.date || 'Không rõ ngày'}</span>
                       <div className="h-px flex-1 bg-slate-200" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
