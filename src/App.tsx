@@ -461,6 +461,56 @@ export default function App() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (results.length === 0) return;
+    
+    let csv = "Ngày,Người Bán,Bộ,Đài,Số,Số Tờ\n";
+    results.forEach(res => {
+      const config = stationConfigs.find(c => c.dayOfWeek === new Date(res.date).getDay());
+      
+      // Main
+      Object.entries(res.mainStationQuantities || {}).forEach(([num, qty]) => {
+        csv += `${res.date},${res.sellerName},${res.setName},${config?.mainStationName || 'Đài Chính'},${num},${qty}\n`;
+      });
+      
+      // Subs
+      res.subStationResults.forEach(sub => {
+        Object.entries(sub.quantities || {}).forEach(([num, qty]) => {
+          csv += `${res.date},${res.sellerName},${res.setName},${sub.name},${num},${qty}\n`;
+        });
+      });
+    });
+
+    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `chia_ve_${dailyInput.date}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBackupData = () => {
+    const data = {
+      sellers,
+      lotterySets,
+      weeklySchedules,
+      stationConfigs,
+      history
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `backup_chia_ve_${new Date().toISOString().split('T')[0]}.json`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Load history and sets from localStorage on mount
   useEffect(() => {
     const savedHistory = localStorage.getItem('lottery_history');
@@ -814,6 +864,23 @@ export default function App() {
           >
             <QrCode size={20} />
             <span>Quét Mã QR Cài Đặt</span>
+          </button>
+
+          <button 
+            onClick={handleExportCSV}
+            disabled={results.length === 0}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all border border-transparent ${results.length > 0 ? 'text-emerald-600 hover:bg-emerald-50 hover:border-emerald-100' : 'text-slate-300 cursor-not-allowed'}`}
+          >
+            <Download size={20} />
+            <span>Tải Kết Quả (CSV)</span>
+          </button>
+
+          <button 
+            onClick={handleBackupData}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 transition-all border border-transparent hover:border-slate-200"
+          >
+            <Save size={20} />
+            <span>Sao Lưu Toàn Bộ</span>
           </button>
 
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
