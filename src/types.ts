@@ -62,7 +62,7 @@ export interface DistributionResult {
   date: string;
   sellerId: string;
   sellerName: string;
-  setName: string;
+  setNames: string[];
   mainStationNumbers: string[];
   mainStationQuantities?: Record<string, number>; // number -> quantity
   subStationResults: {

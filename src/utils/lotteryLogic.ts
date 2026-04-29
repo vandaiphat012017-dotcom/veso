@@ -95,15 +95,17 @@ export function distributeTickets(
       ]);
 
     // Determine starting set
+    const stableIdx = (seller as any).originalIndex !== undefined ? (seller as any).originalIndex : sIdx;
     let startSetIndex = baseSetIndex;
+    
     if (seller.fixedSetId) {
       const fixedIdx = lotterySets.findIndex(s => s.id === seller.fixedSetId);
       if (fixedIdx !== -1) startSetIndex = fixedIdx;
-    } else if (seller.isAutoMode) {
-      startSetIndex = (baseSetIndex + sIdx) % lotterySets.length;
     } else if (seller.manualSetId) {
       const manualIdx = lotterySets.findIndex(s => s.id === seller.manualSetId);
       if (manualIdx !== -1) startSetIndex = manualIdx;
+    } else if (seller.isAutoMode) {
+      startSetIndex = (baseSetIndex + stableIdx) % lotterySets.length;
     }
 
     // Calculate sheets per number
@@ -115,6 +117,7 @@ export function distributeTickets(
     let mainNumbers: string[] = [];
     let mainStationQuantities: Record<string, number> = {};
     let subStationResults: { id: string, name: string, numbers: string[], quantities: Record<string, number> }[] = [];
+    let usedSetNames: Set<string> = new Set();
     
     // Initialize subStationResults with correct names
     subStations.forEach(s => {
@@ -263,9 +266,9 @@ export function distributeTickets(
       setIdsToTake.forEach(id => {
         const s = lotterySets.find(ls => ls.id === id);
         if (s) {
+          usedSetNames.add(s.id);
           s.numbers.forEach(num => {
             if (initialNumbersFromSets.length < totalNeededFromSets && !initialNumbersFromSets.includes(num) && !mainNumbers.includes(num) && !subStationResults.some(r => r.numbers.includes(num))) {
-              
               const isSmallSeller = seller.targetTotalTickets <= 160;
               const allCurrent = [...initialNumbersFromSets, ...mainNumbers, ...subStationResults.flatMap(r => r.numbers)];
               
@@ -632,7 +635,7 @@ if (currentSetOffset > lotterySets.length * 2) break;
       date,
       sellerId: seller.id,
       sellerName: seller.name,
-      setName: startSet.id,
+      setNames: Array.from(usedSetNames),
       mainStationNumbers: [...mainNumbers].sort((a, b) => parseInt(a) - parseInt(b)),
       mainStationQuantities,
       subStationResults: subStationResults.map(r => ({
