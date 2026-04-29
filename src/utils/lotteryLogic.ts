@@ -80,6 +80,13 @@ export function distributeTickets(
     currentSubPools[s.id] = { ...s.tickets };
   });
 
+  // Calculate global totals for dynamic ratio
+  const totalMainTickets = Object.values(currentMainPool).reduce((a, b) => a + b, 0);
+  const totalSubTickets = Object.values(currentSubPools).reduce((acc, pool) => acc + Object.values(pool).reduce((a, b) => a + b, 0), 0);
+  const globalMainRatio = (totalMainTickets + totalSubTickets) > 0 
+    ? totalMainTickets / (totalMainTickets + totalSubTickets) 
+    : 0.7;
+
   // 1. Determine Base Set Index from Date
   const day = new Date(date).getDate();
   const baseSetIndex = (day - 1) % lotterySets.length;
@@ -221,7 +228,14 @@ export function distributeTickets(
         targetSubCounts[id] = Math.ceil(qty / sheetsPerNumber);
       });
     } else {
-      const mainRatio = seller.customRatio !== undefined ? seller.customRatio / 100 : 0.7;
+      let mainRatio = seller.customRatio !== undefined ? seller.customRatio / 100 : globalMainRatio;
+      
+      // Special rule for "BB" suffix: give more sub-station tickets than others
+      if (seller.name.trim().toUpperCase().endsWith('BB')) {
+        // Reduce main station ratio by half to favor sub-stations
+        mainRatio = Math.max(0.1, mainRatio * 0.5);
+      }
+      
       targetMainCount = seller.mainEnabled ? Math.round(remainingNumbersNeeded * mainRatio) : 0;
       
       const totalSubNeeded = remainingNumbersNeeded - targetMainCount;

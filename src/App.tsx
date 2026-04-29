@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
   Ticket, 
@@ -31,8 +31,25 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Seller, DistributionResult, DailyInput, LotterySet, Shortage, WeeklySchedule, DailyStationConfig } from './types';
-import { INITIAL_SELLERS, LOTTERY_SETS, DOUBLE_SETS, getPairId } from './constants';
+import { 
+  Seller, 
+  DistributionResult, 
+  DailyInput, 
+  LotterySet, 
+  Shortage, 
+  WeeklySchedule, 
+  DailyStationConfig,
+  AppNotification
+} from './types';
+import { DOUBLE_SETS, getPairId } from './constants';
+import { 
+  INITIAL_SELLERS, 
+  INITIAL_LOTTERY_SETS, 
+  INITIAL_WEEKLY_SCHEDULES, 
+  INITIAL_STATION_CONFIGS,
+  MAIN_STATION_TICKET_MAP
+} from './initialData';
+import { INITIAL_HISTORY } from './initialHistory';
 import { distributeTickets } from './utils/lotteryLogic';
 
 // New Components
@@ -47,12 +64,13 @@ import SetManagerModal from './components/modals/SetManagerModal';
 import DoubleSetManagerModal from './components/modals/DoubleSetManagerModal';
 import WeeklyScheduleModal from './components/modals/WeeklyScheduleModal';
 import SellerPreferencesModal from './components/modals/SellerPreferencesModal';
+import SellerOverridesModal from './components/modals/SellerOverridesModal';
 import ShortageModal from './components/modals/ShortageModal';
 import QrModal from './components/modals/QrModal';
 
 export default function App() {
   const [sellers, setSellers] = useState<Seller[]>(INITIAL_SELLERS);
-  const [lotterySets, setLotterySets] = useState<LotterySet[]>(LOTTERY_SETS);
+  const [lotterySets, setLotterySets] = useState<LotterySet[]>(INITIAL_LOTTERY_SETS);
   const [dailyInput, setDailyInput] = useState<DailyInput>({
     date: new Date().toISOString().split('T')[0],
     mainStationTickets: {},
@@ -67,7 +85,7 @@ export default function App() {
   });
   const [results, setResults] = useState<DistributionResult[]>([]);
   const [shortages, setShortages] = useState<Shortage[]>([]);
-  const [history, setHistory] = useState<DistributionResult[][]>([]);
+  const [history, setHistory] = useState<DistributionResult[][]>(INITIAL_HISTORY);
   const [activeTab, setActiveTab] = useState<'distribute' | 'sellers' | 'history' | 'settings'>('distribute');
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingStation, setEditingStation] = useState<string>('main');
@@ -78,33 +96,38 @@ export default function App() {
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isSellerPrefOpen, setIsSellerPrefOpen] = useState(false);
+  const [isSellerOverridesOpen, setIsSellerOverridesOpen] = useState(false);
   const [editingSellerId, setEditingSellerId] = useState<string | null>(null);
   const [isQuickSelectOpen, setIsQuickSelectOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
-  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>(
-    Array.from({ length: 7 }, (_, i) => ({
-      dayOfWeek: i,
-      mainStationBaseQuantity: 160, // Default 160 tickets
-      subStationBaseQuantities: { 'sub1': 0, 'sub2': 0 },
-      isActive: false
-    }))
-  );
+  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>(INITIAL_WEEKLY_SCHEDULES);
   const [isWeeklyScheduleOpen, setIsWeeklyScheduleOpen] = useState(false);
   const [doubleSets, setDoubleSets] = useState<Record<string, string>>(DOUBLE_SETS);
   const [isDoubleSetManagerOpen, setIsDoubleSetManagerOpen] = useState(false);
-  const [stationConfigs, setStationConfigs] = useState<DailyStationConfig[]>(
-    Array.from({ length: 7 }, (_, i) => ({
-      dayOfWeek: i,
-      mainStationName: i === 0 ? 'Kiên Giang' : i === 1 ? 'TP.HCM' : i === 2 ? 'Bến Tre' : i === 3 ? 'Cần Thơ' : i === 4 ? 'Tây Ninh' : i === 5 ? 'Vĩnh Long' : 'TP.HCM',
-      subStations: [
-        { id: 'sub1', name: 'Đài Phụ 1' },
-        { id: 'sub2', name: 'Đài Phụ 2' }
-      ]
-    }))
-  );
+  const [stationConfigs, setStationConfigs] = useState<DailyStationConfig[]>(INITIAL_STATION_CONFIGS);
   const [searchNumber, setSearchNumber] = useState('');
   const [adjustAmount, setAdjustAmount] = useState<number>(1);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  const addNotification = (message: string, type: AppNotification['type'] = 'info') => {
+    const id = Math.random().toString(36).substring(2, 11);
+    const newNotification: AppNotification = { id, message, type, timestamp: Date.now() };
+    setNotifications(prev => [newNotification, ...prev].slice(0, 5));
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  };
+
+  const getEffectiveSeller = (seller: Seller, dateStr: string): Seller => {
+    const dayOfWeek = new Date(dateStr).getDay();
+    const overrides = seller.dailyOverrides?.[dayOfWeek];
+    if (!overrides) return seller;
+    return { ...seller, ...overrides };
+  };
+
+  const effectiveSellers = sellers.map(s => getEffectiveSeller(s, dailyInput.date));
 
   const addTicketsToInventory = (station: string, number: string, quantity: number) => {
     setDailyInput(prev => {
@@ -158,16 +181,16 @@ export default function App() {
     }
   }, [dailyInput.date, weeklySchedules, stationConfigs]);
 
-  const updateSetInventory = (setId: string, type: 'q16' | 'q32', val: number) => {
-    const currentInv = setInventory[editingStation]?.[setId] || { q16: 0, q32: 0 };
+  const updateSetInventory = (setId: string, type: 'q16' | 'q32', val: number, stationId: string) => {
+    const currentInv = setInventory[stationId]?.[setId] || { q16: 0, q32: 0 };
     const newQ16 = type === 'q16' ? val : currentInv.q16;
     const newQ32 = type === 'q32' ? val : currentInv.q32;
     const totalPerNum = (newQ16 * 16) + (newQ32 * 32);
 
     setSetInventory(prev => ({
       ...prev,
-      [editingStation]: {
-        ...(prev[editingStation] || {}),
+      [stationId]: {
+        ...(prev[stationId] || {}),
         [setId]: { q16: newQ16, q32: newQ32 }
       }
     }));
@@ -176,7 +199,7 @@ export default function App() {
     if (!set) return;
 
     setDailyInput(prev => {
-      if (editingStation === 'main') {
+      if (stationId === 'main') {
         const newMain = { ...prev.mainStationTickets };
         set.numbers.forEach(n => {
           if (totalPerNum <= 0) delete newMain[n];
@@ -185,7 +208,7 @@ export default function App() {
         return { ...prev, mainStationTickets: newMain };
       } else {
         const newSubs = prev.subStations.map(s => {
-          if (s.id === editingStation) {
+          if (s.id === stationId) {
             const newTickets = { ...s.tickets };
             set.numbers.forEach(n => {
               if (totalPerNum <= 0) delete newTickets[n];
@@ -290,23 +313,24 @@ export default function App() {
 
       if (grandTotal > 0) {
         const stationName = config?.mainStationName || 'Đài Chính';
-        allTickets.push(`
-          <div class="ticket">
-            <div class="header">
-              ${new Date(res.date).toLocaleDateString('vi-VN')} - ${stationName}
-            </div>
-            <div class="quantity">
-              ${grandTotal}
-            </div>
-            <div class="footer">
-              <div class="seller-name">${res.sellerName}</div>
-              <div class="set-info">
-                <span class="set-label">BỘ:</span>
-                <span class="set-value">${res.setNames?.join(', ') || (res as any).setName || ''}</span>
-              </div>
-            </div>
-          </div>
-        `);
+        const setNameStr = res.setNames?.join(', ') || (res as any).setName || '';
+        allTickets.push(
+          '<div class="ticket">' +
+            '<div class="header">' +
+              new Date(res.date).toLocaleDateString('vi-VN') + ' - ' + stationName +
+            '</div>' +
+            '<div class="quantity">' +
+              grandTotal +
+            '</div>' +
+            '<div class="footer">' +
+              '<div class="seller-name">' + res.sellerName + '</div>' +
+              '<div class="set-info">' +
+                '<span class="set-label">BỘ:</span>' +
+                '<span class="set-value">' + setNameStr + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
       }
     });
 
@@ -315,118 +339,117 @@ export default function App() {
       return;
     }
 
-    const html = `
-      <html>
-        <head>
-          <title>In Phiếu Phân Phối</title>
-          <style>
-            @page {
-              size: A4;
-              margin: 5mm;
-            }
-            body { 
-              margin: 0; 
-              padding: 0; 
-              font-family: sans-serif; 
-            }
-            .grid-container {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              grid-template-rows: repeat(5, 1fr);
-              width: 200mm;
-              height: 287mm;
-              gap: 0;
-              page-break-after: always;
-            }
-            .ticket { 
-              border: 0.5pt solid #ccc; 
-              padding: 5px; 
-              display: flex; 
-              flex-direction: column; 
-              justify-content: space-between; 
-              align-items: center;
-              box-sizing: border-box;
-              overflow: hidden;
-              text-align: center;
-            }
-            .header { 
-              font-size: 12px; 
-              font-weight: 800; 
-              color: #000;
-              width: 100%;
-              border-bottom: 1pt solid #000;
-              padding-bottom: 2px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .quantity { 
-              font-size: 92px; 
-              font-weight: 900; 
-              line-height: 0.75;
-              margin: 4px 0;
-              color: #000;
-              letter-spacing: -2px;
-            }
-            .footer { 
-              width: 100%;
-              display: flex;
-              flex-direction: column;
-              gap: 0;
-              color: #000;
-              border-top: 1pt solid #000;
-              padding-top: 3px;
-            }
-            .seller-name {
-              font-size: 22px;
-              font-weight: 900;
-              line-height: 1.1;
-              text-transform: uppercase;
-              margin-bottom: 2px;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              width: 100%;
-            }
-            .set-info {
-              display: flex;
-              justify-content: center;
-              gap: 4px;
-              align-items: baseline;
-            }
-            .set-label {
-              font-size: 10px;
-              font-weight: 700;
-              opacity: 0.7;
-            }
-            .set-value {
-              font-size: 18px;
-              font-weight: 900;
-            }
-            @media print {
-              .grid-container {
-                page-break-after: always;
-              }
-              .grid-container:last-child {
-                page-break-after: auto;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          ${Array.from({ length: Math.ceil(allTickets.length / 20) }).map((_, i) => `
-            <div class="grid-container">
-              ${allTickets.slice(i * 20, (i + 1) * 20).join('')}
-            </div>
-          `).join('')}
-          <script>
-            window.onload = () => {
-              window.print();
-              setTimeout(() => window.close(), 500);
-            };
-          </script>
-        </body>
-      </html>
-    `;
+    const html = 
+      '<html>' +
+        '<head>' +
+          '<title>In Phiếu Phân Phối</title>' +
+          '<style>' +
+            '@page {' +
+              'size: A4;' +
+              'margin: 5mm;' +
+            '}' +
+            'body { ' +
+              'margin: 0; ' +
+              'padding: 0; ' +
+              'font-family: sans-serif; ' +
+            '}' +
+            '.grid-container {' +
+              'display: grid;' +
+              'grid-template-columns: repeat(4, 1fr);' +
+              'grid-template-rows: repeat(5, 1fr);' +
+              'width: 200mm;' +
+              'height: 287mm;' +
+              'gap: 0;' +
+              'page-break-after: always;' +
+            '}' +
+            '.ticket { ' +
+              'border: 0.5pt solid #ccc; ' +
+              'padding: 5px; ' +
+              'display: flex; ' +
+              'flex-direction: column; ' +
+              'justify-content: space-between; ' +
+              'align-items: center;' +
+              'box-sizing: border-box;' +
+              'overflow: hidden;' +
+              'text-align: center;' +
+            '}' +
+            '.header { ' +
+              'font-size: 12px; ' +
+              'font-weight: 800; ' +
+              'color: #000;' +
+              'width: 100%;' +
+              'border-bottom: 1pt solid #000;' +
+              'padding-bottom: 2px;' +
+              'text-transform: uppercase;' +
+              'letter-spacing: 0.5px;' +
+            '}' +
+            '.quantity { ' +
+              'font-size: 92px; ' +
+              'font-weight: 900; ' +
+              'line-height: 0.75;' +
+              'margin: 4px 0;' +
+              'color: #000;' +
+              'letter-spacing: -2px;' +
+            '}' +
+            '.footer { ' +
+              'width: 100%;' +
+              'display: flex;' +
+              'flex-direction: column;' +
+              'gap: 0;' +
+              'color: #000;' +
+              'border-top: 1pt solid #000;' +
+              'padding-top: 3px;' +
+            '}' +
+            '.seller-name {' +
+              'font-size: 22px;' +
+              'font-weight: 900;' +
+              'line-height: 1.1;' +
+              'text-transform: uppercase;' +
+              'margin-bottom: 2px;' +
+              'white-space: nowrap;' +
+              'overflow: hidden;' +
+              'text-overflow: ellipsis;' +
+              'width: 100%;' +
+            '}' +
+            '.set-info {' +
+              'display: flex;' +
+              'justify-content: center;' +
+              'gap: 4px;' +
+              'align-items: baseline;' +
+            '}' +
+            '.set-label {' +
+              'font-size: 10px;' +
+              'font-weight: 700;' +
+              'opacity: 0.7;' +
+            '}' +
+            '.set-value {' +
+              'font-size: 18px;' +
+              'font-weight: 900;' +
+            '}' +
+            '@media print {' +
+              '.grid-container {' +
+                'page-break-after: always;' +
+              '}' +
+              '.grid-container:last-child {' +
+                'page-break-after: auto;' +
+              '}' +
+            '}' +
+          '</style>' +
+        '</head>' +
+        '<body>' +
+          Array.from({ length: Math.ceil(allTickets.length / 20) }).map((_, i) => 
+            '<div class="grid-container">' +
+              allTickets.slice(i * 20, (i + 1) * 20).join('') +
+            '</div>'
+          ).join('') +
+          '<script>' +
+            'window.onload = () => {' +
+              'window.print();' +
+              'setTimeout(() => window.close(), 500);' +
+            '};' +
+          '</script>' +
+        '</body>' +
+      '</html>';
     printWindow.document.write(html);
     printWindow.document.close();
   };
@@ -482,6 +505,69 @@ export default function App() {
       }
     });
   };
+  const manuallyUpdateResult = (
+    sellerId: string, 
+    stationType: 'main' | string, 
+    oldNum: string, 
+    newNum: string
+  ) => {
+    if (oldNum === newNum) return;
+    if (newNum.length !== 2) return;
+
+    setResults(prev => {
+      return prev.map(res => {
+        if (res.sellerId !== sellerId) return res;
+
+        const newState = { ...res };
+        if (stationType === 'main') {
+          newState.mainStationNumbers = res.mainStationNumbers.map(n => n === oldNum ? newNum : n);
+          if (newState.mainStationQuantities) {
+            const qty = newState.mainStationQuantities[oldNum];
+            delete newState.mainStationQuantities[oldNum];
+            newState.mainStationQuantities[newNum] = qty;
+          }
+        } else {
+          newState.subStationResults = res.subStationResults.map(sr => {
+            if (sr.id !== stationType) return sr;
+            const newNumbers = sr.numbers.map(n => n === oldNum ? newNum : n);
+            const newQuantities = { ...sr.quantities };
+            const qty = newQuantities[oldNum];
+            delete newQuantities[oldNum];
+            newQuantities[newNum] = qty;
+            return { ...sr, numbers: newNumbers, quantities: newQuantities };
+          });
+        }
+        return newState;
+      });
+    });
+
+    // Update pools
+    setCurrentPools(prev => {
+      const newPools = { ...prev };
+      
+      // Return oldNum to its pool
+      if (stationType === 'main') {
+        newPools.main[oldNum] = (newPools.main[oldNum] || 0) + 1; // Assuming 1 sheet per number for simplicity in basic edit or use the quantity
+        // Actually we should handle quantities properly
+      } else {
+        const subPool = { ...newPools.subPools[stationType] };
+        subPool[oldNum] = (subPool[oldNum] || 0) + 1;
+        newPools.subPools[stationType] = subPool;
+      }
+
+      // Deduct newNum from its pool
+      if (stationType === 'main') {
+        if (newPools.main[newNum] > 0) newPools.main[newNum]--;
+      } else {
+        const subPool = { ...newPools.subPools[stationType] };
+        if (subPool[newNum] > 0) subPool[newNum]--;
+        newPools.subPools[stationType] = subPool;
+      }
+
+      return newPools;
+    });
+  };
+
   const handleCopyLink = () => {
     const url = process.env.SHARED_APP_URL || process.env.APP_URL || window.location.origin;
     navigator.clipboard.writeText(url);
@@ -508,13 +594,16 @@ export default function App() {
       
       // Main
       Object.entries(res.mainStationQuantities || {}).forEach(([num, qty]) => {
-        csv += `${res.date},${res.sellerName},${res.setNames?.join(' & ') || (res as any).setName || ''},${config?.mainStationName || 'Đài Chính'},${num},${qty}\n`;
+        const setName = res.setNames?.join(' & ') || (res as any).setName || '';
+        const stationNameLabel = config?.mainStationName || 'Đài Chính';
+        csv += res.date + "," + res.sellerName + "," + setName + "," + stationNameLabel + "," + num + "," + qty + "\n";
       });
       
       // Subs
       res.subStationResults.forEach(sub => {
         Object.entries(sub.quantities || {}).forEach(([num, qty]) => {
-          csv += `${res.date},${res.sellerName},${res.setNames?.join(' & ') || (res as any).setName || ''},${sub.name},${num},${qty}\n`;
+          const setName = res.setNames?.join(' & ') || (res as any).setName || '';
+          csv += res.date + "," + res.sellerName + "," + setName + "," + sub.name + "," + num + "," + qty + "\n";
         });
       });
     });
@@ -523,7 +612,7 @@ export default function App() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `chia_ve_${dailyInput.date}.csv`);
+    link.setAttribute("download", "chia_ve_" + dailyInput.date + ".csv");
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -542,7 +631,7 @@ export default function App() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `backup_chia_ve_${new Date().toISOString().split('T')[0]}.json`);
+    link.setAttribute("download", "backup_chia_ve_" + new Date().toISOString().split('T')[0] + ".json");
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -646,13 +735,19 @@ export default function App() {
     const schedule = weeklySchedules.find(s => s.dayOfWeek === dayOfWeek);
     
     if (schedule && schedule.isActive) {
-      const qty = schedule.mainStationBaseQuantity;
       const newMain: Record<string, number> = {};
-      lotterySets.forEach(set => {
-        set.numbers.forEach(num => {
-          newMain[num] = qty;
+      
+      // If the base quantity matches our default total, use the high-fidelity map
+      if (schedule.mainStationBaseQuantity === 20640) {
+        Object.assign(newMain, MAIN_STATION_TICKET_MAP);
+      } else {
+        const qty = schedule.mainStationBaseQuantity / 100; // Simplified fallback
+        lotterySets.forEach(set => {
+          set.numbers.forEach(num => {
+            newMain[num] = qty;
+          });
         });
-      });
+      }
       
       const newSubStations = dailyInput.subStations.map(sub => {
         const subQty = schedule.subStationBaseQuantities[sub.id] || 0;
@@ -676,6 +771,9 @@ export default function App() {
         main: {}
       };
       lotterySets.forEach(set => {
+        // Find quantity for numbers in this set (assuming same for all in set)
+        const firstNum = set.numbers[0];
+        const qty = newMain[firstNum] || 0;
         newInv.main[set.id] = { q16: Math.floor(qty / 16), q32: 0 };
       });
       
@@ -695,9 +793,16 @@ export default function App() {
     setIsProcessing(true);
     
     // Determine which sellers to process
+    const currentSellers = effectiveSellers;
     const targetSellers = sellerId 
-      ? sellers.filter(s => s.id === sellerId)
-      : sellers.filter(s => s.isEnabled);
+      ? currentSellers.filter(s => s.id === sellerId)
+      : currentSellers.filter(s => s.isEnabled);
+
+    if (targetSellers.length === 0) {
+      addNotification("Không có người bán nào được chọn để chia vé", "warning");
+      setIsProcessing(false);
+      return;
+    }
 
     // Use current pools if distributing individually, otherwise use initial input
     const initialMain = sellerId ? currentPools.main : dailyInput.mainStationTickets;
@@ -720,7 +825,10 @@ export default function App() {
           originalIndex: sellers.findIndex(os => os.id === s.id)
         })),
         initialMain,
-        dailyInput.subStations,
+        dailyInput.subStations.map(sub => ({
+          ...sub,
+          tickets: sellerId ? currentPools.subPools[sub.id] : sub.tickets
+        })),
         lotterySets,
         doubleSets,
         history
@@ -745,13 +853,18 @@ export default function App() {
         });
       }
       
-      setShortages(report.shortages);
-
       if (report.results.length > 0) {
         const updatedHistory = [report.results, ...history].slice(0, 30); // Keep 30 days
         setHistory(updatedHistory);
         localStorage.setItem('lottery_history', JSON.stringify(updatedHistory));
+        addNotification("Đã chia vé thành công cho " + report.results.length + " người bán", "success");
       }
+
+      if (report.shortages.length > 0) {
+        addNotification("Có " + report.shortages.length + " trường hợp thiếu vé", "warning");
+      }
+      
+      setShortages(report.shortages);
       
       // Update seller set indices for next time (rotation) for auto-mode sellers
       const updatedSellers = sellers.map(s => {
@@ -844,7 +957,7 @@ export default function App() {
   const addSeller = () => {
     const newSeller: Seller = {
       id: Math.random().toString(36).substr(2, 9),
-      name: `Người mới ${sellers.length + 1}`,
+      name: "Người mới " + (sellers.length + 1),
       setType: 'single',
       sheetsOption: '16',
       targetTotalTickets: 160,
@@ -881,6 +994,44 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans">
+      {/* Notifications */}
+      <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map(n => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.9 }}
+              className={"pointer-events-auto p-4 rounded-2xl shadow-xl border flex items-center gap-3 min-w-[300px] " + (
+                n.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+                n.type === 'error' ? 'bg-rose-50 border-rose-100 text-rose-700' :
+                n.type === 'warning' ? 'bg-amber-50 border-amber-100 text-amber-700' :
+                'bg-white border-slate-100 text-slate-700'
+              )}
+            >
+              <div className={"w-8 h-8 rounded-xl flex items-center justify-center shrink-0 " + (
+                n.type === 'success' ? 'bg-emerald-100' :
+                n.type === 'error' ? 'bg-rose-100' :
+                n.type === 'warning' ? 'bg-amber-100' :
+                'bg-slate-100'
+              )}>
+                {n.type === 'success' && <CheckCircle2 size={18} />}
+                {n.type === 'error' && <AlertCircle size={18} />}
+                {n.type === 'warning' && <AlertCircle size={18} />}
+                {n.type === 'info' && <RefreshCw size={18} />}
+              </div>
+              <p className="text-sm font-bold">{n.message}</p>
+              <button 
+                onClick={() => setNotifications(prev => prev.filter(notif => notif.id !== n.id))}
+                className="ml-auto p-1 hover:bg-black/5 rounded-lg transition-colors"
+              >
+                <X size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
       {/* Sidebar */}
       <Sidebar 
         activeTab={activeTab}
@@ -917,7 +1068,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => handlePrintResults(results.length > 0 ? results : getDraftResults())}
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95 ${results.length > 0 ? 'bg-slate-900 text-white shadow-slate-200 hover:bg-slate-800' : 'bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600'}`}
+              className={"flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95 " + (results.length > 0 ? 'bg-slate-900 text-white shadow-slate-200 hover:bg-slate-800' : 'bg-amber-500 text-white shadow-amber-100 hover:bg-amber-600')}
             >
               <Printer size={20} />
               <span>{results.length > 0 ? 'In Tất Cả Phiếu' : 'In Phiếu Dự Kiến'}</span>
@@ -991,6 +1142,7 @@ export default function App() {
               currentRatio={currentRatio}
               handlePrintResults={handlePrintResults}
               getDraftResults={getDraftResults}
+              manuallyUpdateResult={manuallyUpdateResult}
             />
           )}
 
@@ -1007,6 +1159,8 @@ export default function App() {
               handlePrintResults={handlePrintResults}
               setEditingSellerId={setEditingSellerId}
               setIsSellerPrefOpen={setIsSellerPrefOpen}
+              setIsSellerOverridesOpen={setIsSellerOverridesOpen}
+              stationConfigs={stationConfigs}
               dailyInput={dailyInput}
               results={results}
             />
@@ -1027,801 +1181,65 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Shortage Modal */}
-      <AnimatePresence>
-        {shortages.length > 0 && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-white rounded-[40px] w-full max-w-lg shadow-2xl overflow-hidden"
-            >
-              <div className="bg-rose-500 p-8 text-white relative overflow-hidden">
-                <div className="relative z-10">
-                  <div className="flex items-center gap-3 mb-2">
-                    <AlertCircle size={24} />
-                    <h3 className="text-2xl font-bold">Thiếu hụt kho vé!</h3>
-                  </div>
-                  <p className="opacity-90 font-medium">Hệ thống không tìm đủ vé để chia cho một số người bán.</p>
-                </div>
-                <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-              </div>
+      {/* Modals */}
+      <ShortageModal 
+        shortages={shortages}
+        setShortages={setShortages}
+        addTicketsToInventory={addTicketsToInventory}
+        setEditingSellerId={setEditingSellerId}
+        setIsSellerPrefOpen={setIsSellerPrefOpen}
+      />
 
-              <div className="p-8">
-                <div className="space-y-4 max-h-[400px] overflow-y-auto mb-8 pr-2">
-                  {shortages.map((s, idx) => (
-                    <div key={idx} className="flex flex-col gap-3 p-5 bg-rose-50 rounded-3xl border border-rose-100">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-slate-800 text-lg">{s.sellerName}</div>
-                          <div className="text-xs font-bold text-rose-500 uppercase mt-1">
-                            Thiếu {s.needed} số {s.station === 'main' ? 'Đài Chính' : s.station === 'ưu tiên' ? 'Số Ưu Tiên' : `Đài Phụ (${s.station})`}
-                          </div>
-                        </div>
-                        <div className="text-rose-400">
-                          <AlertCircle size={24} />
-                        </div>
-                      </div>
+      <DoubleSetManagerModal 
+        isOpen={isDoubleSetManagerOpen}
+        onClose={() => setIsDoubleSetManagerOpen(false)}
+        doubleSets={doubleSets}
+        setDoubleSets={setDoubleSets}
+        lotterySets={lotterySets}
+        defaultDoubleSets={DOUBLE_SETS}
+      />
+      <SetManagerModal 
+        isOpen={isSetManagerOpen}
+        onClose={() => setIsSetManagerOpen(false)}
+        lotterySets={lotterySets}
+        setLotterySets={setLotterySets}
+        updateSetNumber={updateSetNumber}
+        defaultLotterySets={INITIAL_LOTTERY_SETS}
+      />
+      <WeeklyScheduleModal 
+        isOpen={isWeeklyScheduleOpen}
+        onClose={() => setIsWeeklyScheduleOpen(false)}
+        weeklySchedules={weeklySchedules}
+        setWeeklySchedules={setWeeklySchedules}
+        stationConfigs={stationConfigs}
+        setStationConfigs={setStationConfigs}
+      />
 
-                      {s.missingNumber && (
-                        <div className="flex flex-col gap-2 mt-2 pt-3 border-t border-rose-100/50">
-                          <p className="text-xs text-slate-500 font-medium italic">
-                            Số bị thiếu: <span className="text-rose-600 font-bold text-sm">{s.missingNumber}</span>
-                          </p>
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => {
-                                addTicketsToInventory(s.station, s.missingNumber!, s.needed);
-                                setShortages(prev => prev.filter((_, i) => i !== idx));
-                              }}
-                              className="flex-1 py-2.5 bg-white text-rose-600 border border-rose-200 rounded-xl text-[10px] font-bold hover:bg-rose-100 transition-all flex items-center justify-center gap-1"
-                            >
-                              <Plus size={12} /> Thêm {s.needed} vé
-                            </button>
-                            <button 
-                              onClick={() => {
-                                setEditingSellerId(s.sellerId);
-                                setIsSellerPrefOpen(true);
-                                setShortages([]);
-                              }}
-                              className="flex-1 py-2.5 bg-rose-600 text-white rounded-xl text-[10px] font-bold hover:bg-rose-700 transition-all flex items-center justify-center gap-1"
-                            >
-                              <Edit3 size={12} /> Đổi số khác
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {!s.missingNumber && (
-                        <div className="mt-2 pt-3 border-t border-rose-100/50">
-                          <button 
-                            onClick={() => {
-                              setEditingSellerId(s.sellerId);
-                              setIsSellerPrefOpen(true);
-                              setShortages([]);
-                            }}
-                            className="w-full py-2.5 bg-rose-600 text-white rounded-xl text-[10px] font-bold hover:bg-rose-700 transition-all flex items-center justify-center gap-1"
-                          >
-                            <Settings size={12} /> Điều chỉnh người bán
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+      <SellerPreferencesModal 
+        isOpen={isSellerPrefOpen}
+        onClose={() => setIsSellerPrefOpen(false)}
+        seller={sellers.find(s => s.id === editingSellerId) || null}
+        updateSeller={updateSeller}
+        lotterySets={lotterySets}
+        dailyInput={dailyInput}
+        isQuickSelectOpen={isQuickSelectOpen}
+        setIsQuickSelectOpen={setIsQuickSelectOpen}
+      />
 
-                <div className="flex flex-col gap-3">
-                  <button 
-                    onClick={() => setShortages([])}
-                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-                  >
-                    Đóng và tự xử lý
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <SellerOverridesModal 
+        isOpen={isSellerOverridesOpen}
+        onClose={() => setIsSellerOverridesOpen(false)}
+        seller={sellers.find(s => s.id === editingSellerId) || null}
+        updateSeller={updateSeller}
+        stationConfigs={stationConfigs}
+      />
 
-      {/* Double Set Manager Modal */}
-      <AnimatePresence>
-        {isDoubleSetManagerOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"
-            >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-800">Quản Lý Bộ Đôi</h3>
-                  <p className="text-sm text-slate-500">Thiết lập các cặp bộ số đi cùng nhau khi chọn loại "Bộ Đôi".</p>
-                </div>
-                <button 
-                  onClick={() => setIsDoubleSetManagerOpen(false)}
-                  className="p-2 hover:bg-slate-200 rounded-full transition-colors"
-                >
-                  <X size={24} className="text-slate-400" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6">
-                <div className="space-y-4">
-                  {Object.entries(doubleSets).map(([setA, setB], idx) => (
-                    <div key={idx} className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Bộ Thứ Nhất</label>
-                        <select 
-                          value={setA}
-                          onChange={(e) => {
-                            const newSets = { ...doubleSets };
-                            const val = e.target.value;
-                            delete newSets[setA];
-                            newSets[val] = setB;
-                            setDoubleSets(newSets);
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          {lotterySets.map(s => <option key={s.id} value={s.id}>Bộ {s.id}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex items-center justify-center pt-5">
-                        <ArrowRightLeft size={20} className="text-slate-300" />
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Bộ Thứ Hai</label>
-                        <select 
-                          value={setB}
-                          onChange={(e) => {
-                            const newSets = { ...doubleSets };
-                            newSets[setA] = e.target.value;
-                            setDoubleSets(newSets);
-                          }}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                        >
-                          {lotterySets.map(s => <option key={s.id} value={s.id}>Bộ {s.id}</option>)}
-                        </select>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          const newSets = { ...doubleSets };
-                          delete newSets[setA];
-                          setDoubleSets(newSets);
-                        }}
-                        className="p-2 text-slate-300 hover:text-rose-500 transition-colors mt-5"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  ))}
-
-                  <button 
-                    onClick={() => {
-                      const availableSets = lotterySets.map(s => s.id).filter(id => !doubleSets[id] && !Object.values(doubleSets).includes(id));
-                      if (availableSets.length >= 2) {
-                        setDoubleSets({ ...doubleSets, [availableSets[0]]: availableSets[1] });
-                      } else {
-                        alert("Không còn đủ bộ số trống để tạo cặp mới.");
-                      }
-                    }}
-                    className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold text-sm hover:border-indigo-300 hover:text-indigo-500 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Plus size={18} />
-                    Thêm Cặp Bộ Đôi Mới
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
-                <button 
-                  onClick={() => setDoubleSets(DOUBLE_SETS)}
-                  className="px-6 py-3 text-slate-500 font-bold hover:text-slate-700 transition-colors"
-                >
-                  Khôi phục mặc định
-                </button>
-                <button 
-                  onClick={() => setIsDoubleSetManagerOpen(false)}
-                  className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-                >
-                  Lưu & Đóng
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      {/* Set Manager Modal */}
-      <AnimatePresence>
-        {isSetManagerOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
-            >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-800">Quản Lý Các Bộ Số</h3>
-                  <p className="text-sm text-slate-500">Chỉnh sửa hoặc thêm mới các bộ số để hệ thống tự động chia.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => {
-                      const newId = (lotterySets.length + 1).toString().padStart(2, '0');
-                      setLotterySets([...lotterySets, { id: newId, numbers: Array(10).fill('00') }]);
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition-all"
-                  >
-                    <Plus size={16} />
-                    Thêm Bộ Mới
-                  </button>
-                  <button 
-                    onClick={() => setIsSetManagerOpen(false)}
-                    className="p-2 hover:bg-slate-200 rounded-full transition-colors"
-                  >
-                    <X size={24} className="text-slate-400" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {lotterySets.map((set) => (
-                    <div key={set.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 relative group">
-                      <button 
-                        onClick={() => {
-                          if (confirm(`Xoá bộ số ${set.id}?`)) {
-                            setLotterySets(lotterySets.filter(s => s.id !== set.id));
-                          }
-                        }}
-                        className="absolute top-4 right-4 p-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-400 uppercase">Mã Bộ:</span>
-                          <input 
-                            type="text"
-                            value={set.id}
-                            onChange={(e) => {
-                              const newId = e.target.value;
-                              setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, id: newId } : s));
-                            }}
-                            className="w-12 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-bold text-indigo-600 outline-none focus:ring-1 focus:ring-indigo-500"
-                          />
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Số lượng:</span>
-                            <input 
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={set.numbers.length}
-                              onChange={(e) => {
-                                const newSize = parseInt(e.target.value) || 0;
-                                let newNumbers = [...set.numbers];
-                                if (newSize > newNumbers.length) {
-                                  newNumbers = [...newNumbers, ...Array(newSize - newNumbers.length).fill('00')];
-                                } else {
-                                  newNumbers = newNumbers.slice(0, newSize);
-                                }
-                                setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: newNumbers } : s));
-                              }}
-                              className="w-12 bg-white border border-slate-200 rounded px-1 py-0.5 text-[10px] font-bold text-slate-600 outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase">
-                            <Hash size={12} />
-                            {set.numbers.length} con số
-                          </div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-5 gap-2">
-                        {set.numbers.map((num, idx) => (
-                          <div key={idx} className="relative group/num">
-                            <input 
-                              type="text"
-                              value={num}
-                              onChange={(e) => updateSetNumber(set.id, idx, e.target.value)}
-                              className="w-full text-center py-2 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                              maxLength={2}
-                            />
-                            <button 
-                              onClick={() => {
-                                const newNumbers = set.numbers.filter((_, i) => i !== idx);
-                                setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: newNumbers } : s));
-                              }}
-                              className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/num:opacity-100 transition-all shadow-sm"
-                            >
-                              <X size={10} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-3 flex justify-between items-center">
-                        <button 
-                          onClick={() => {
-                            if (confirm(`Xoá tất cả số trong bộ ${set.id}?`)) {
-                              setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: [] } : s));
-                            }
-                          }}
-                          className="text-[10px] font-bold text-rose-400 hover:text-rose-600 transition-colors"
-                        >
-                          Xóa tất cả số
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const newNumbers = [...set.numbers, '00'];
-                            setLotterySets(lotterySets.map(s => s.id === set.id ? { ...s, numbers: newNumbers } : s));
-                          }}
-                          className="text-[10px] font-bold text-indigo-600 hover:underline"
-                        >
-                          + Thêm số vào bộ
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
-                <button 
-                  onClick={() => {
-                    if (confirm('Bạn có chắc chắn muốn khôi phục bộ số mặc định?')) {
-                      setLotterySets(LOTTERY_SETS);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-6 py-3 text-slate-500 font-bold hover:text-slate-700 transition-colors"
-                >
-                  <RefreshCw size={20} />
-                  Khôi phục mặc định
-                </button>
-                <button 
-                  onClick={() => setIsSetManagerOpen(false)}
-                  className="flex items-center gap-2 px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
-                >
-                  <Save size={20} />
-                  Lưu & Đóng
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      {/* Weekly Schedule Modal */}
-      <AnimatePresence>
-        {isWeeklyScheduleOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col"
-            >
-              <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
-                <div>
-                  <h3 className="text-2xl font-bold">Lịch Trình Hàng Tuần</h3>
-                  <p className="text-sm opacity-80 font-medium">Thiết lập lượng vé cố định cho từng ngày trong tuần</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => {
-                      const base = weeklySchedules[0].mainStationBaseQuantity;
-                      setWeeklySchedules(prev => prev.map(s => ({ ...s, mainStationBaseQuantity: base })));
-                    }}
-                    className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-colors"
-                    title="Áp dụng giá trị của Chủ Nhật cho tất cả các ngày"
-                  >
-                    Sao chép CN
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setWeeklySchedules(prev => prev.map(s => ({ ...s, isActive: true })));
-                    }}
-                    className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-colors"
-                  >
-                    Bật tất cả
-                  </button>
-                  <button 
-                    onClick={() => setIsWeeklyScheduleOpen(false)}
-                    className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
-                {['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'].map((dayName, idx) => {
-                  const schedule = weeklySchedules.find(s => s.dayOfWeek === idx)!;
-                  const config = stationConfigs.find(c => c.dayOfWeek === idx)!;
-                  
-                  return (
-                    <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-lg font-bold text-slate-700">{dayName}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Kích hoạt</span>
-                          <button 
-                            onClick={() => {
-                              const newSchedules = [...weeklySchedules];
-                              newSchedules[idx].isActive = !newSchedules[idx].isActive;
-                              setWeeklySchedules(newSchedules);
-                            }}
-                            className={`w-10 h-5 rounded-full relative transition-colors ${schedule.isActive ? 'bg-indigo-600' : 'bg-slate-300'}`}
-                          >
-                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${schedule.isActive ? 'right-1' : 'left-1'}`} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Tên Đài Chính</label>
-                          <input 
-                            type="text"
-                            value={config.mainStationName}
-                            onChange={(e) => {
-                              const newConfigs = [...stationConfigs];
-                              newConfigs[idx].mainStationName = e.target.value;
-                              setStationConfigs(newConfigs);
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase">Lượng vé Đài Chính</label>
-                          <input 
-                            type="number" 
-                            value={schedule.mainStationBaseQuantity}
-                            onChange={(e) => {
-                              const newSchedules = [...weeklySchedules];
-                              newSchedules[idx].mainStationBaseQuantity = parseInt(e.target.value) || 0;
-                              setWeeklySchedules(newSchedules);
-                            }}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                            disabled={!schedule.isActive}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {config.subStations.map((sub, subIdx) => (
-                          <div key={sub.id} className="space-y-2 p-3 bg-white rounded-2xl border border-slate-100">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase">Đài Phụ {subIdx + 1}</label>
-                            <div className="flex gap-2">
-                              <input 
-                                type="text"
-                                value={sub.name}
-                                onChange={(e) => {
-                                  const newConfigs = [...stationConfigs];
-                                  newConfigs[idx].subStations[subIdx].name = e.target.value;
-                                  setStationConfigs(newConfigs);
-                                }}
-                                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600 outline-none"
-                                placeholder="Tên đài"
-                              />
-                              <input 
-                                type="number"
-                                value={schedule.subStationBaseQuantities[sub.id] || 0}
-                                onChange={(e) => {
-                                  const newSchedules = [...weeklySchedules];
-                                  newSchedules[idx].subStationBaseQuantities[sub.id] = parseInt(e.target.value) || 0;
-                                  setWeeklySchedules(newSchedules);
-                                }}
-                                className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-600 outline-none text-center"
-                                placeholder="Vé"
-                                disabled={!schedule.isActive}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
-                  <AlertCircle className="text-amber-600 shrink-0" size={20} />
-                  <p className="text-xs text-amber-700 leading-relaxed">
-                    Khi kích hoạt, hệ thống sẽ tự động gợi ý áp dụng lượng vé này cho đài chính khi bạn chọn ngày tương ứng. 
-                    Bạn có thể nhấn nút <strong>"Áp dụng lịch trình"</strong> ở màn hình chính để điền nhanh.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-                <button 
-                  onClick={() => setIsWeeklyScheduleOpen(false)}
-                  className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-                >
-                  Đóng
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {isSellerPrefOpen && editingSellerId && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col"
-            >
-              {(() => {
-                const seller = sellers.find(s => s.id === editingSellerId);
-                if (!seller) return null;
-                return (
-                  <>
-                    <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
-                      <div>
-                        <h3 className="text-2xl font-bold">Sở Thích Người Bán</h3>
-                        <p className="text-sm opacity-80 font-medium">{seller.name}</p>
-                      </div>
-                      <button 
-                        onClick={() => setIsSellerPrefOpen(false)}
-                        className="p-2 hover:bg-white/10 rounded-full transition-colors"
-                      >
-                        <X size={24} />
-                      </button>
-                    </div>
-
-                    <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
-                      {/* Fixed Set Preference */}
-                      <section>
-                        <div className="flex items-center gap-2 mb-4">
-                          <Target size={18} className="text-indigo-600" />
-                          <h4 className="font-bold text-slate-800">Bộ Số Cố Định</h4>
-                        </div>
-                        <div className="grid grid-cols-4 gap-3">
-                          <button 
-                            onClick={() => updateSeller(seller.id, { fixedSetId: undefined })}
-                            className={`p-3 rounded-2xl border-2 text-xs font-bold transition-all ${!seller.fixedSetId ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-slate-100 bg-slate-50 text-slate-400'}`}
-                          >
-                            Không cố định
-                          </button>
-                          {lotterySets.map(set => (
-                            <button 
-                              key={set.id}
-                              onClick={() => updateSeller(seller.id, { fixedSetId: set.id })}
-                              className={`p-3 rounded-2xl border-2 text-xs font-bold transition-all ${seller.fixedSetId === set.id ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-slate-100 bg-slate-50 text-slate-400'}`}
-                            >
-                              Bộ {set.id}
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-
-                      {/* Custom Number Preferences */}
-                      <section>
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <Hash size={18} className="text-indigo-600" />
-                            <h4 className="font-bold text-slate-800">Số Lượng Riêng Biệt</h4>
-                          </div>
-                          <button 
-                            onClick={() => {
-                              const prefs = seller.customPreferences || [];
-                              updateSeller(seller.id, { customPreferences: [...prefs, { number: '00', quantity: 16 }] });
-                            }}
-                            className="text-xs font-bold text-indigo-600 hover:underline"
-                          >
-                            + Thêm số ưu tiên
-                          </button>
-                        </div>
-
-                        {/* Quick Select Grid */}
-                        <div className="mb-6">
-                          <button 
-                            onClick={() => setIsQuickSelectOpen(!isQuickSelectOpen)}
-                            className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 mb-3"
-                          >
-                            <ChevronDown size={12} className={`transition-transform ${isQuickSelectOpen ? 'rotate-180' : ''}`} />
-                            <span>Chọn nhanh từ bảng 100 số (Mặc định 16 tờ)</span>
-                          </button>
-                          {isQuickSelectOpen && (
-                            <div className="grid grid-cols-10 gap-1 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                              {Array.from({ length: 100 }, (_, i) => i.toString().padStart(2, '0')).map(num => {
-                                const isSelected = (seller.customPreferences || []).some(p => p.number === num);
-                                return (
-                                  <button 
-                                    key={num}
-                                    onClick={() => {
-                                      const prefs = [...(seller.customPreferences || [])];
-                                      if (isSelected) {
-                                        updateSeller(seller.id, { customPreferences: prefs.filter(p => p.number !== num) });
-                                      } else {
-                                        updateSeller(seller.id, { customPreferences: [...prefs, { number: num, quantity: 16 }] });
-                                      }
-                                    }}
-                                    className={`aspect-square flex items-center justify-center text-[9px] font-bold rounded-lg border transition-all ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
-                                  >
-                                    {num}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="space-y-3">
-                          {(seller.customPreferences || []).length > 0 ? (
-                            (seller.customPreferences || []).map((pref, idx) => (
-                              <div key={idx} className="flex flex-col gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                <div className="flex items-center gap-4">
-                                  <div className="flex-1">
-                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Con số</label>
-                                    <input 
-                                      type="text" 
-                                      value={pref.number}
-                                      onChange={(e) => {
-                                        const newPrefs = [...(seller.customPreferences || [])];
-                                        newPrefs[idx].number = e.target.value.padStart(2, '0').slice(-2);
-                                        updateSeller(seller.id, { customPreferences: newPrefs });
-                                      }}
-                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                      maxLength={2}
-                                    />
-                                  </div>
-                                  <div className="flex-1">
-                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Số lượng vé</label>
-                                    <select 
-                                      value={pref.quantity}
-                                      onChange={(e) => {
-                                        const newPrefs = [...(seller.customPreferences || [])];
-                                        newPrefs[idx].quantity = parseInt(e.target.value);
-                                        updateSeller(seller.id, { customPreferences: newPrefs });
-                                      }}
-                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                      <option value={16}>16 tờ</option>
-                                      <option value={32}>32 tờ</option>
-                                      <option value={160}>160 tờ</option>
-                                      <option value={320}>320 tờ</option>
-                                    </select>
-                                  </div>
-                                  <button 
-                                    onClick={() => {
-                                      const newPrefs = (seller.customPreferences || []).filter((_, i) => i !== idx);
-                                      updateSeller(seller.id, { customPreferences: newPrefs });
-                                    }}
-                                    className="mt-4 p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="flex-1">
-                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Đài lấy vé</label>
-                                    <select 
-                                      value={pref.stationId || ''}
-                                      onChange={(e) => {
-                                        const newPrefs = [...(seller.customPreferences || [])];
-                                        newPrefs[idx].stationId = e.target.value || undefined;
-                                        updateSeller(seller.id, { customPreferences: newPrefs });
-                                      }}
-                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                      <option value="">Tự động (Chính {'>'} Phụ)</option>
-                                      <option value="main">Đài Chính</option>
-                                      {(dailyInput?.subStations || []).map(sub => (
-                                        <option key={sub.id} value={sub.id}>{sub.name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div className="flex-1">
-                                    <label className="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Ngày áp dụng</label>
-                                    <select 
-                                      value={pref.dayOfWeek === undefined ? '' : pref.dayOfWeek}
-                                      onChange={(e) => {
-                                        const newPrefs = [...(seller.customPreferences || [])];
-                                        newPrefs[idx].dayOfWeek = e.target.value === '' ? undefined : parseInt(e.target.value);
-                                        updateSeller(seller.id, { customPreferences: newPrefs });
-                                      }}
-                                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                      <option value="">Tất cả các ngày</option>
-                                      <option value="1">Thứ Hai</option>
-                                      <option value="2">Thứ Ba</option>
-                                      <option value="3">Thứ Tư</option>
-                                      <option value="4">Thứ Năm</option>
-                                      <option value="5">Thứ Sáu</option>
-                                      <option value="6">Thứ Bảy</option>
-                                      <option value="0">Chủ Nhật</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs font-medium">
-                              Chưa có số ưu tiên nào.
-                            </div>
-                          )}
-                        </div>
-                      </section>
-                    </div>
-
-                    <div className="p-8 border-t border-slate-100 bg-slate-50/50 flex justify-end">
-                      <button 
-                        onClick={() => setIsSellerPrefOpen(false)}
-                        className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-                      >
-                        Hoàn Tất
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {isQrModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col items-center p-8 text-center"
-            >
-              <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-6">
-                <QrCode size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">Quét Mã QR Để Cài Đặt</h3>
-              <p className="text-sm text-slate-500 mb-8">Dùng camera điện thoại quét mã này để mở ứng dụng và cài đặt vào màn hình chính.</p>
-              
-              <div className="p-4 bg-white border-4 border-slate-50 rounded-2xl shadow-inner mb-6">
-                <QRCodeSVG 
-                  value={process.env.SHARED_APP_URL || process.env.APP_URL || window.location.origin} 
-                  size={200}
-                  level="H"
-                  includeMargin={true}
-                />
-              </div>
-
-              <div className="mb-6 w-full text-left">
-                <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Link Cài Đặt</p>
-                <div className="flex items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <span className="text-xs text-slate-600 font-medium truncate flex-1">
-                    {process.env.SHARED_APP_URL || process.env.APP_URL || window.location.origin}
-                  </span>
-                  <button 
-                    onClick={handleCopyLink}
-                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 whitespace-nowrap"
-                  >
-                    {copySuccess ? 'Đã chép!' : 'Sao chép'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mb-8 text-left">
-                <p className="text-[10px] text-amber-700 font-bold uppercase mb-1">Lưu ý lỗi 403/404:</p>
-                <p className="text-[10px] text-amber-600 leading-relaxed">
-                  Nếu quét bị lỗi 403, bạn cần đăng nhập Google trên điện thoại hoặc sử dụng link <b>"Shared App"</b> từ menu AI Studio.
-                </p>
-              </div>
-
-              <button 
-                onClick={() => setIsQrModalOpen(false)}
-                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all"
-              >
-                Đóng
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <QrModal 
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        copySuccess={copySuccess}
+        handleCopyLink={handleCopyLink}
+      />
     </div>
   );
 }

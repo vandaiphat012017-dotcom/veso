@@ -28,6 +28,7 @@ export interface Seller {
   subStationRatios: Record<string, number>; // sub-station ID -> percentage (0-100)
   fixedSetId?: string; // If set, always uses this set
   customPreferences?: CustomPreference[]; // Specific numbers and quantities
+  dailyOverrides?: Record<number, Partial<Pick<Seller, 'targetTotalTickets' | 'mainEnabled' | 'subStationRatios' | 'isEnabled' | 'sheetsOption' | 'setType'>>>;
 }
 
 export interface StationName {
@@ -81,6 +82,13 @@ export interface Shortage {
   needed: number;
   available: number;
   missingNumber?: string; // The specific number that was missing (if applicable)
+}
+
+export interface AppNotification {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  timestamp: number;
 }
 
 export interface DistributionReport {

@@ -5,8 +5,7 @@ import { Seller, LotterySet, DailyStationConfig } from '../../types';
 interface SellerPreferencesModalProps {
   isOpen: boolean;
   onClose: () => void;
-  sellerId: string | null;
-  sellers: Seller[];
+  seller: Seller | null;
   updateSeller: (id: string, updates: Partial<Seller>) => void;
   lotterySets: LotterySet[];
   dailyInput: any;
@@ -17,15 +16,13 @@ interface SellerPreferencesModalProps {
 export default function SellerPreferencesModal({
   isOpen,
   onClose,
-  sellerId,
-  sellers,
+  seller,
   updateSeller,
   lotterySets,
   dailyInput,
   isQuickSelectOpen,
   setIsQuickSelectOpen
 }: SellerPreferencesModalProps) {
-  const seller = sellers.find(s => s.id === sellerId);
   if (!seller) return null;
 
   return (

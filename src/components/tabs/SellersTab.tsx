@@ -7,9 +7,10 @@ import {
   Star, 
   Trash2, 
   Settings, 
-  Hash 
+  Hash,
+  Calendar 
 } from 'lucide-react';
-import { Seller, DistributionResult, LotterySet } from '../../types';
+import { Seller, DistributionResult, LotterySet, DailyStationConfig } from '../../types';
 
 interface SellersTabProps {
   sellers: Seller[];
@@ -24,6 +25,8 @@ interface SellersTabProps {
   lotterySets: LotterySet[];
   setEditingSellerId: (id: string) => void;
   setIsSellerPrefOpen: (open: boolean) => void;
+  setIsSellerOverridesOpen: (open: boolean) => void;
+  stationConfigs: DailyStationConfig[];
   INITIAL_SELLERS: Seller[];
 }
 
@@ -40,6 +43,8 @@ export default function SellersTab({
   lotterySets,
   setEditingSellerId,
   setIsSellerPrefOpen,
+  setIsSellerOverridesOpen,
+  stationConfigs,
   INITIAL_SELLERS
 }: SellersTabProps) {
   return (
@@ -231,16 +236,29 @@ export default function SellersTab({
                     </select>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => {
-                        if (confirm(`Xóa người bán ${seller.name}?`)) {
-                          setSellers(sellers.filter(s => s.id !== seller.id));
-                        }
-                      }}
-                      className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button 
+                        onClick={() => {
+                          setEditingSellerId(seller.id);
+                          setIsSellerOverridesOpen(true);
+                        }}
+                        className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+                        title="Cài đặt theo ngày"
+                      >
+                        <Calendar size={18} />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (confirm(`Xóa người bán ${seller.name}?`)) {
+                            setSellers(sellers.filter(s => s.id !== seller.id));
+                          }
+                        }}
+                        className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                        title="Xóa người bán"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
