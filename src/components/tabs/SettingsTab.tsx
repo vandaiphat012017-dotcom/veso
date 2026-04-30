@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { X, Plus } from 'lucide-react';
 import { WeeklySchedule, DailyStationConfig } from '../../types';
 
 interface SettingsTabProps {
@@ -6,13 +7,17 @@ interface SettingsTabProps {
   setWeeklySchedules: (schedules: WeeklySchedule[]) => void;
   stationConfigs: DailyStationConfig[];
   setStationConfigs: (configs: DailyStationConfig[]) => void;
+  addSubStation: (name?: string) => void;
+  removeSubStation: (id: string) => void;
 }
 
 export default function SettingsTab({
   weeklySchedules,
   setWeeklySchedules,
   stationConfigs,
-  setStationConfigs
+  setStationConfigs,
+  addSubStation,
+  removeSubStation
 }: SettingsTabProps) {
   const dayNames = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
@@ -29,15 +34,18 @@ export default function SettingsTab({
           <h3 className="text-2xl font-bold">Lịch Trình Hàng Tuần</h3>
           <p className="text-sm opacity-80 font-medium">Thiết lập lượng vé cố định và tên đài cho từng ngày trong tuần</p>
         </div>
-        <div className="p-8 space-y-6">
+        <div className="p-8 space-y-8">
           {dayNames.map((dayName, idx) => {
             const schedule = weeklySchedules.find(s => s.dayOfWeek === idx)!;
             const config = stationConfigs.find(c => c.dayOfWeek === idx)!;
             
             return (
-              <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+              <div key={idx} className="bg-slate-50 p-8 rounded-3xl border border-slate-100 space-y-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-lg font-bold text-slate-700">{dayName}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl font-black text-slate-800">{dayName}</span>
+                    {!schedule.isActive && <span className="px-2 py-0.5 bg-slate-200 text-slate-500 text-[10px] font-bold rounded uppercase">Tắt</span>}
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Kích hoạt</span>
                     <button 
@@ -53,78 +61,123 @@ export default function SettingsTab({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Tên Đài Chính</label>
-                    <input 
-                      type="text"
-                      value={config.mainStationName}
-                      onChange={(e) => {
-                        const newConfigs = [...stationConfigs];
-                        newConfigs[idx].mainStationName = e.target.value;
-                        setStationConfigs(newConfigs);
-                      }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {/* Main Station Config */}
+                  <div className="space-y-4 bg-white p-4 rounded-2xl border border-slate-100">
+                    <div className="flex items-center justify-between">
+                       <label className="text-[10px] font-bold text-indigo-600 uppercase">Đài Chính</label>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-bold text-slate-400">Tên đài</span>
+                        <input 
+                          type="text"
+                          value={config.mainStationName}
+                          onChange={(e) => {
+                            const newConfigs = [...stationConfigs];
+                            newConfigs[idx].mainStationName = e.target.value;
+                            setStationConfigs(newConfigs);
+                          }}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-bold text-slate-400">Mặc định số lượng</span>
+                        <input 
+                          type="number" 
+                          value={schedule.mainStationBaseQuantity}
+                          onChange={(e) => {
+                            const newSchedules = [...weeklySchedules];
+                            newSchedules[idx].mainStationBaseQuantity = parseInt(e.target.value) || 0;
+                            setWeeklySchedules(newSchedules);
+                          }}
+                          className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          disabled={!schedule.isActive}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Lượng vé Đài Chính</label>
-                    <input 
-                      type="number" 
-                      value={schedule.mainStationBaseQuantity}
-                      onChange={(e) => {
+
+                  {/* Sub Stations Dynamic Loop */}
+                  {config.subStations.map((sub, sIdx) => (
+                    <div key={sub.id} className="space-y-4 bg-white p-4 rounded-2xl border border-slate-100 relative group">
+                      <div className="flex items-center justify-between">
+                         <label className="text-[10px] font-bold text-emerald-600 uppercase">Đài Phụ {sIdx + 1}</label>
+                         {config.subStations.length > 1 && (
+                            <button 
+                              onClick={() => {
+                                // We need a way to remove from a specific day in Settings, but for now removeSubStation in App handles current day.
+                                // Let's just implement a local remove logic for Settings if we want to be precise.
+                                const newConfigs = [...stationConfigs];
+                                newConfigs[idx].subStations = newConfigs[idx].subStations.filter(s => s.id !== sub.id);
+                                setStationConfigs(newConfigs);
+                                
+                                const newSchedules = [...weeklySchedules];
+                                const newQs = { ...newSchedules[idx].subStationBaseQuantities };
+                                delete newQs[sub.id];
+                                newSchedules[idx].subStationBaseQuantities = newQs;
+                                setWeeklySchedules(newSchedules);
+                              }}
+                              className="p-1 text-slate-300 hover:text-rose-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                               <X size={12} />
+                            </button>
+                         )}
+                      </div>
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400">Tên đài</span>
+                          <input 
+                            type="text"
+                            value={sub.name}
+                            onChange={(e) => {
+                              const newConfigs = [...stationConfigs];
+                              newConfigs[idx].subStations[sIdx].name = e.target.value;
+                              setStationConfigs(newConfigs);
+                            }}
+                            className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400">Mặc định số lượng</span>
+                          <input 
+                            type="number" 
+                            value={schedule.subStationBaseQuantities[sub.id] || 0}
+                            onChange={(e) => {
+                              const newSchedules = [...weeklySchedules];
+                              newSchedules[idx].subStationBaseQuantities = {
+                                ...newSchedules[idx].subStationBaseQuantities,
+                                [sub.id]: parseInt(e.target.value) || 0
+                              };
+                              setWeeklySchedules(newSchedules);
+                            }}
+                            className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            disabled={!schedule.isActive}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add Substation Button */}
+                  {config.subStations.length < 5 && (
+                    <button 
+                      onClick={() => {
+                        const id = 'sub_' + Date.now();
+                        const newConfigs = [...stationConfigs];
+                        newConfigs[idx].subStations.push({ id, name: `Đài Phụ ${newConfigs[idx].subStations.length + 1}` });
+                        setStationConfigs(newConfigs);
+
                         const newSchedules = [...weeklySchedules];
-                        newSchedules[idx].mainStationBaseQuantity = parseInt(e.target.value) || 0;
+                        newSchedules[idx].subStationBaseQuantities[id] = 10320;
                         setWeeklySchedules(newSchedules);
                       }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                      disabled={!schedule.isActive}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Lượng vé Đài Phụ</label>
-                    <input 
-                      type="number" 
-                      value={schedule.subStationBaseQuantities['sub1'] || 0}
-                      onChange={(e) => {
-                        const newSchedules = [...weeklySchedules];
-                        newSchedules[idx].subStationBaseQuantities = {
-                          ...newSchedules[idx].subStationBaseQuantities,
-                          'sub1': parseInt(e.target.value) || 0,
-                          'sub2': parseInt(e.target.value) || 0
-                        };
-                        setWeeklySchedules(newSchedules);
-                      }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                      disabled={!schedule.isActive}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Đài Phụ 1</label>
-                    <input 
-                      type="text"
-                      value={config.subStations[0].name}
-                      onChange={(e) => {
-                        const newConfigs = [...stationConfigs];
-                        newConfigs[idx].subStations[0].name = e.target.value;
-                        setStationConfigs(newConfigs);
-                      }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Đài Phụ 2</label>
-                    <input 
-                      type="text"
-                      value={config.subStations[1].name}
-                      onChange={(e) => {
-                        const newConfigs = [...stationConfigs];
-                        newConfigs[idx].subStations[1].name = e.target.value;
-                        setStationConfigs(newConfigs);
-                      }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                  </div>
+                      className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-600 hover:bg-indigo-50 transition-all text-slate-400 hover:text-indigo-600 group"
+                    >
+                      <Plus size={24} />
+                      <span className="text-xs font-bold uppercase">Thêm Đài Phụ</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );

@@ -47,7 +47,8 @@ import {
   INITIAL_LOTTERY_SETS, 
   INITIAL_WEEKLY_SCHEDULES, 
   INITIAL_STATION_CONFIGS,
-  MAIN_STATION_TICKET_MAP
+  MAIN_STATION_TICKET_MAP,
+  SUB_STATION_TICKET_MAP
 } from './initialData';
 import { INITIAL_HISTORY } from './initialHistory';
 import { distributeTickets } from './utils/lotteryLogic';
@@ -71,13 +72,22 @@ import QrModal from './components/modals/QrModal';
 export default function App() {
   const [sellers, setSellers] = useState<Seller[]>(INITIAL_SELLERS);
   const [lotterySets, setLotterySets] = useState<LotterySet[]>(INITIAL_LOTTERY_SETS);
-  const [dailyInput, setDailyInput] = useState<DailyInput>({
-    date: new Date().toISOString().split('T')[0],
-    mainStationTickets: {},
-    subStations: [
-      { id: 'sub1', name: 'Đài Phụ 1', tickets: {} },
-      { id: 'sub2', name: 'Đài Phụ 2', tickets: {} }
-    ]
+  const [dailyInput, setDailyInput] = useState<DailyInput>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const dayOfWeek = new Date().getDay();
+    const config = INITIAL_STATION_CONFIGS.find(c => c.dayOfWeek === dayOfWeek);
+    
+    return {
+      date: today,
+      mainStationTickets: { ...MAIN_STATION_TICKET_MAP },
+      subStations: config ? config.subStations.map(sub => ({
+        ...sub,
+        tickets: { ...SUB_STATION_TICKET_MAP }
+      })) : [
+        { id: 'sub1', name: 'Đài Phụ 1', tickets: { ...SUB_STATION_TICKET_MAP } },
+        { id: 'sub2', name: 'Đài Phụ 2', tickets: { ...SUB_STATION_TICKET_MAP } }
+      ]
+    };
   });
   const [currentPools, setCurrentPools] = useState<{ main: Record<string, number>, subPools: Record<string, Record<string, number>> }>({
     main: {},
@@ -232,6 +242,58 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  const addSubStation = (name: string = 'Đài Phụ Mới') => {
+    const id = 'sub_' + Date.now();
+    setDailyInput(prev => ({
+      ...prev,
+      subStations: [
+        ...prev.subStations,
+        { id, name, tickets: { ...SUB_STATION_TICKET_MAP } }
+      ]
+    }));
+    
+    // Also update permanent config for current day of week if user wants persistence
+    const dayOfWeek = new Date(dailyInput.date).getDay();
+    setStationConfigs(prev => prev.map(c => 
+      c.dayOfWeek === dayOfWeek 
+        ? { ...c, subStations: [...c.subStations, { id, name }] }
+        : c
+    ));
+
+    setWeeklySchedules(prev => prev.map(s => 
+      s.dayOfWeek === dayOfWeek 
+        ? { ...s, subStationBaseQuantities: { ...s.subStationBaseQuantities, [id]: 10320 } }
+        : s
+    ));
+    
+    addNotification(`Đã thêm ${name}`, 'success');
+  };
+
+  const removeSubStation = (id: string) => {
+    setDailyInput(prev => ({
+      ...prev,
+      subStations: prev.subStations.filter(s => s.id !== id)
+    }));
+
+    const dayOfWeek = new Date(dailyInput.date).getDay();
+    setStationConfigs(prev => prev.map(c => 
+      c.dayOfWeek === dayOfWeek 
+        ? { ...c, subStations: c.subStations.filter(s => s.id !== id) }
+        : c
+    ));
+
+    setWeeklySchedules(prev => prev.map(s => {
+      if (s.dayOfWeek === dayOfWeek) {
+        const newQs = { ...s.subStationBaseQuantities };
+        delete newQs[id];
+        return { ...s, subStationBaseQuantities: newQs };
+      }
+      return s;
+    }));
+
+    addNotification(`Đã xóa đài phụ`, 'warning');
+  };
 
   const handlePrint = (res: DistributionResult) => {
     handlePrintResults([res]);
@@ -752,11 +814,17 @@ export default function App() {
       const newSubStations = dailyInput.subStations.map(sub => {
         const subQty = schedule.subStationBaseQuantities[sub.id] || 0;
         const newSubTickets: Record<string, number> = {};
-        lotterySets.forEach(set => {
-          set.numbers.forEach(num => {
-            newSubTickets[num] = subQty;
+        
+        if (subQty === 10320) {
+          Object.assign(newSubTickets, SUB_STATION_TICKET_MAP);
+        } else {
+          const qty = Math.floor(subQty / 100);
+          lotterySets.forEach(set => {
+            set.numbers.forEach(num => {
+              newSubTickets[num] = qty;
+            });
           });
-        });
+        }
         return { ...sub, tickets: newSubTickets };
       });
 
@@ -1143,6 +1211,8 @@ export default function App() {
               handlePrintResults={handlePrintResults}
               getDraftResults={getDraftResults}
               manuallyUpdateResult={manuallyUpdateResult}
+              addSubStation={addSubStation}
+              removeSubStation={removeSubStation}
             />
           )}
 
@@ -1172,6 +1242,8 @@ export default function App() {
               setWeeklySchedules={setWeeklySchedules}
               stationConfigs={stationConfigs}
               setStationConfigs={setStationConfigs}
+              addSubStation={addSubStation}
+              removeSubStation={removeSubStation}
             />
           )}
 

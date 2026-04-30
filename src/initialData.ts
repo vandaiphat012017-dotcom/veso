@@ -14,25 +14,36 @@ export const INITIAL_LOTTERY_SETS: LotterySet[] = [
 ];
 
 export const INITIAL_WEEKLY_SCHEDULES: WeeklySchedule[] = [
-  { "dayOfWeek": 0, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 1, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 2, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 3, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 4, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 5, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true },
-  { "dayOfWeek": 6, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 0, "sub2": 0 }, "isActive": true }
+  { "dayOfWeek": 0, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 1, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 2, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 3, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 4, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 5, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true },
+  { "dayOfWeek": 6, "mainStationBaseQuantity": 20640, "subStationBaseQuantities": { "sub1": 10320, "sub2": 10320 }, "isActive": true }
 ];
 
 export const MAIN_STATION_TICKET_MAP: Record<string, number> = (() => {
   const map: Record<string, number> = {};
-  // Base 192 for all
   for (let i = 0; i < 100; i++) {
     map[i.toString().padStart(2, '0')] = 192;
   }
-  // Specific overrides from image (256 group)
   ['02', '14', '26', '38', '40', '53', '65', '77', '89', '91'].forEach(n => map[n] = 256);
-  // Specific overrides from image (272 group)
   ['08', '10', '22', '34', '46', '59', '61', '73', '85', '97'].forEach(n => map[n] = 272);
+  return map;
+})();
+
+export const SUB_STATION_TICKET_MAP: Record<string, number> = (() => {
+  const map: Record<string, number> = {};
+  // 10320 total sheets = 45 numbers with 112 sheets, 55 numbers with 96 sheets
+  for (let i = 0; i < 100; i++) {
+    const num = i.toString().padStart(2, '0');
+    if (i < 45) {
+      map[num] = 112; 
+    } else {
+      map[num] = 96;
+    }
+  }
   return map;
 })();
 

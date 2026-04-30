@@ -59,6 +59,8 @@ interface DistributeTabProps {
   handlePrintResults: (res: DistributionResult[]) => void;
   getDraftResults: () => DistributionResult[];
   manuallyUpdateResult: (sellerId: string, stationId: string, oldNum: string, newNum: string) => void;
+  addSubStation: (name?: string) => void;
+  removeSubStation: (id: string) => void;
 }
 
 export default function DistributeTab({
@@ -96,7 +98,9 @@ export default function DistributeTab({
   currentRatio,
   handlePrintResults,
   getDraftResults,
-  manuallyUpdateResult
+  manuallyUpdateResult,
+  addSubStation,
+  removeSubStation
 }: DistributeTabProps) {
   const currentDayOfWeek = new Date(dailyInput.date).getDay();
   const currentConfig = stationConfigs.find(c => c.dayOfWeek === currentDayOfWeek);
@@ -201,7 +205,13 @@ export default function DistributeTab({
                         </div>
                       </div>
                       {dailyInput.subStations.map((sub: any) => (
-                        <div key={sub.id} className="bg-white p-2 rounded-xl border border-slate-100 text-center flex flex-col gap-1 shadow-sm">
+                        <div key={sub.id} className="bg-white p-2 rounded-xl border border-slate-100 text-center flex flex-col gap-1 shadow-sm relative group">
+                          <button 
+                            onClick={() => removeSubStation(sub.id)}
+                            className="absolute -top-1 -right-1 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X size={8} />
+                          </button>
                           <span className="text-[7px] font-bold text-slate-400 uppercase truncate">{sub.name}</span>
                           <div className="flex items-center justify-between">
                             <button onClick={() => adjustInventory(searchNumber, -adjustAmount, sub.id)} className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"><MinusCircle size={14} /></button>
@@ -210,6 +220,18 @@ export default function DistributeTab({
                           </div>
                         </div>
                       ))}
+                      {dailyInput.subStations.length < 5 && (
+                        <button 
+                          onClick={() => {
+                            const name = prompt('Nhập tên đài phụ mới:');
+                            if (name) addSubStation(name);
+                          }}
+                          className="bg-slate-50 p-2 rounded-xl border border-dashed border-slate-300 text-center flex flex-col items-center justify-center gap-1 hover:bg-slate-100 transition-all group"
+                        >
+                          <Plus size={14} className="text-slate-400 group-hover:text-indigo-600" />
+                          <span className="text-[7px] font-bold text-slate-400 group-hover:text-indigo-600 uppercase">Thêm Đài</span>
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-center justify-between px-1">
                       <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-100">
@@ -342,8 +364,11 @@ export default function DistributeTab({
                 <Users size={24} />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-800">Chia Từng Người</h3>
-                <p className="text-xs text-slate-400 font-medium">Xử lý phân phối riêng biệt</p>
+                <h3 className="text-xl font-bold text-slate-800">Chia Vé Hàng Loạt</h3>
+                <p className="text-xs text-slate-400 font-medium">
+                  {sellers.filter(s => s.isEnabled).length} người chờ • 
+                  <span className="text-emerald-500 font-bold ml-1">{results.length} đã xong</span>
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -359,17 +384,12 @@ export default function DistributeTab({
               </div>
               <div className="flex gap-3">
                 <button 
-                  onClick={applyWeeklySchedule}
-                  className="text-[10px] font-bold text-indigo-600 hover:underline"
-                >
-                  Áp dụng lịch
-                </button>
-                <button 
                   onClick={() => handleDistribute()}
                   disabled={isProcessing || sellers.filter(s => s.isEnabled).every(s => results.some(r => r.sellerId === s.id))}
-                  className="text-[10px] font-bold text-indigo-600 hover:underline disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 disabled:shadow-none"
                 >
-                  Chia tất cả
+                  <Play size={14} fill="currentColor" />
+                  <span>CHIA TẤT CẢ</span>
                 </button>
                 <button 
                   onClick={() => {
@@ -383,9 +403,10 @@ export default function DistributeTab({
                       subPools: initialSubPools
                     });
                   }}
-                  className="text-[10px] font-bold text-rose-500 hover:underline"
+                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                  title="Xóa kết quả"
                 >
-                  Xóa kết quả
+                  <Trash2 size={16} />
                 </button>
               </div>
             </div>
@@ -603,17 +624,23 @@ export default function DistributeTab({
                           </div>
                         </div>
 
-                        <div className="space-y-4 relative z-10">
+                        <div className="space-y-3 relative z-10">
                           {((result?.mainStationNumbers || []).length > 0 || result?.mainStationQuantities) && (
-                            <div className="bg-white/40 p-2.5 rounded-xl border border-emerald-100/50">
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                                <span className="text-[8px] font-black text-indigo-700 uppercase tracking-wider">
-                                  {currentConfig?.mainStationName || 'Đài Chính'}
+                            <div className="bg-white/40 p-3 rounded-2xl border border-emerald-100/50">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-200" />
+                                  <span className="text-[9px] font-black text-indigo-700 uppercase tracking-widest">
+                                    {currentConfig?.mainStationName || 'Đài Chính'}
+                                  </span>
+                                </div>
+                                <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">
+                                  {Object.values(result?.mainStationQuantities || {}).reduce((a, b) => a + b, 0)} TỜ
                                 </span>
                               </div>
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex flex-wrap gap-2">
                                 {result?.mainStationNumbers.map((n, idx) => {
+                                  const qty = result?.mainStationQuantities?.[n];
                                   const isEditing = editingResult?.sellerId === seller.id && editingResult?.stationId === 'main' && editingResult?.index === idx;
                                   return (
                                     <div key={`${idx}-${n}`} className="relative group">
@@ -633,14 +660,17 @@ export default function DistributeTab({
                                             if (e.key === 'Enter') e.currentTarget.blur();
                                             if (e.key === 'Escape') setEditingResult(null);
                                           }}
-                                          className="w-10 h-7 text-center bg-indigo-600 text-white rounded-lg text-xs font-black shadow-lg shadow-indigo-200 outline-none border-2 border-white"
+                                          className="w-11 h-8 text-center bg-indigo-600 text-white rounded-xl text-xs font-black shadow-lg shadow-indigo-200 outline-none border-2 border-white"
                                         />
                                       ) : (
                                         <button 
                                           onClick={() => setEditingResult({ sellerId: seller.id, stationId: 'main', index: idx, value: n })}
-                                          className="h-7 w-10 flex items-center justify-center bg-white rounded-lg text-xs font-black text-indigo-700 border border-indigo-100 hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm"
+                                          className="min-w-[44px] h-8 flex items-center justify-center gap-1.5 bg-white rounded-xl text-xs font-black text-indigo-700 border border-indigo-100 hover:bg-indigo-50 hover:border-indigo-300 hover:scale-105 active:scale-95 transition-all shadow-sm group"
                                         >
-                                          {n}
+                                          <span>{n}</span>
+                                          {qty !== undefined && (
+                                            <span className="text-[8px] font-bold opacity-40 group-hover:opacity-100">({qty})</span>
+                                          )}
                                         </button>
                                       )}
                                     </div>
@@ -649,15 +679,21 @@ export default function DistributeTab({
                               </div>
                             </div>
                           )}
-
-                          {result?.subStationResults.map(sr => (sr.numbers.length > 0) && (
-                            <div key={sr.id} className="bg-white/40 p-2.5 rounded-xl border border-emerald-100/50">
-                              <div className="flex items-center gap-2 mb-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                <span className="text-[8px] font-black text-emerald-700 uppercase tracking-wider">{sr.name}</span>
+ 
+                           {result?.subStationResults.map(sr => (sr.numbers.length > 0) && (
+                            <div key={sr.id} className="bg-white/40 p-3 rounded-2xl border border-emerald-100/50">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />
+                                  <span className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">{sr.name}</span>
+                                </div>
+                                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
+                                  {Object.values(sr.quantities || {}).reduce((a, b) => a + b, 0)} TỜ
+                                </span>
                               </div>
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex flex-wrap gap-2">
                                 {sr.numbers.map((n, idx) => {
+                                  const qty = sr.quantities?.[n];
                                   const isEditing = editingResult?.sellerId === seller.id && editingResult?.stationId === sr.id && editingResult?.index === idx;
                                   return (
                                     <div key={`${idx}-${n}`} className="relative group">
@@ -677,14 +713,17 @@ export default function DistributeTab({
                                             if (e.key === 'Enter') e.currentTarget.blur();
                                             if (e.key === 'Escape') setEditingResult(null);
                                           }}
-                                          className="w-10 h-7 text-center bg-emerald-600 text-white rounded-lg text-xs font-black shadow-lg shadow-emerald-200 outline-none border-2 border-white"
+                                          className="w-11 h-8 text-center bg-emerald-600 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-200 outline-none border-2 border-white"
                                         />
                                       ) : (
                                         <button 
                                           onClick={() => setEditingResult({ sellerId: seller.id, stationId: sr.id, index: idx, value: n })}
-                                          className="h-7 w-10 flex items-center justify-center bg-emerald-100/50 rounded-lg text-xs font-black text-emerald-800 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400 transition-all shadow-sm"
+                                          className="min-w-[44px] h-8 flex items-center justify-center gap-1.5 bg-emerald-100/50 rounded-xl text-xs font-black text-emerald-800 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400 hover:scale-105 active:scale-95 transition-all shadow-sm group"
                                         >
-                                          {n}
+                                          <span>{n}</span>
+                                          {qty !== undefined && (
+                                            <span className="text-[8px] font-bold opacity-40 group-hover:opacity-100">({qty})</span>
+                                          )}
                                         </button>
                                       )}
                                     </div>
